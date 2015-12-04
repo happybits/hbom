@@ -1,0 +1,12 @@
+-r requirements.txt
+
+coverage >= 3.7.1
+-e git://github.com/pytest-dev/pytest.git@master#egg=pytest
+testfixtures >= 4.0.1
+mock == 1.0.1
+docopt == 0.6.2
+tox
+flake8
+python-coveralls
+redis-py-cluster>=1.0.0
+Cython>=0.23.4

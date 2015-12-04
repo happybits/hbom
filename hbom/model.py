@@ -1,0 +1,402 @@
+import json
+from uuid import uuid4
+import re
+from .settings import *  # noqa
+from .exceptions import FieldError
+from .fields import (Field, StringField)
+from .pipeline import Pipeline
+import redis
+try:
+    # noinspection PyPackageRequirements
+    import rediscluster
+except ImportError:
+    rediscluster = None
+
+
+__all__ = ['Model']
+
+
+class AbstractError(RuntimeError):
+    pass
+
+
+class _OmaMetaclass(type):
+    def __new__(mcs, name, bases, d):
+        if name == 'Model':
+            return type.__new__(mcs, name, bases, d)
+
+        d['_required'] = required = set()
+        d['_fields'] = fields = {}
+        d['_pkey'] = None
+
+        # load all fields from any base classes to allow for validation
+        odict = {}
+
+        for ocls in reversed(bases):
+            f = getattr(ocls, '_fields', None)
+            if f is not None:
+                odict.update(f)
+        odict.update(d)
+
+        # need to remove id pk from any parent class
+        # it gets added again later.
+        parent_pkey = odict.pop('id', None)
+
+        d = odict
+
+        # validate all of our fields to ensure that they fulfill our
+        # expectations
+        for attr, col in d.iteritems():
+            if isinstance(col, Field):
+                fields[attr] = col
+                if getattr(col, '_required', False):
+                    required.add(attr)
+                if getattr(col, '_primary', False):
+                    if d['_pkey']:
+                        raise FieldError(
+                            "One primary field allowed, you have: %s %s" % (
+                                attr, d['_pkey'])
+                        )
+                    d['_pkey'] = attr
+                elif attr == 'id':
+                    raise FieldError("Cannot have non-primary key named 'id'")
+
+        if not d['_pkey']:
+            d['_pkey'] = 'id'
+            pkey = parent_pkey
+            if pkey is None:
+                pkey = StringField(primary=True, default=lambda: str(uuid4()))
+            d['id'] = fields['id'] = pkey
+
+        model = type.__new__(mcs, name, bases, d)
+        return model
+
+
+class Oma(object):
+    """
+    This is the base class for all models. You subclass from this base Model
+    in order to create a model with fields. As an example::
+
+        class User(Model):
+            email_address = StringField(required=True)
+            salt = StringField(default='')
+            hash = StringField(default='')
+            created_at = FloatField(default=time.time)
+
+    Which can then be used like::
+
+        user = User(email_address='user@domain.com')
+        user.save()
+        user = User.get(email_address='user@domain.com')
+        user = User.get(5)
+        users = User.get([2, 6, 1, 7])
+
+    """
+    __metaclass__ = _OmaMetaclass
+
+    def __init__(self, **kwargs):
+
+        self._new = not kwargs.pop('_loading', False)
+        model = self.__class__.__name__
+        self._data = {}
+        self._init = False
+        self._loaded = False
+        self._last = {}
+        ref = kwargs.pop('_ref', False)
+        if ref:
+            attr = getattr(self.__class__, '_pkey')
+            cval = ref
+            data = (model, attr, cval, True)
+            setattr(self, attr, data)
+            self._new = False
+            self._pre_load()
+            return
+
+        for attr in getattr(self, '_fields'):
+            cval = kwargs.get(attr, None)
+            data = (model, attr, cval, not self._new)
+            setattr(self, attr, data)
+
+        if not self._new:
+            self._last = self.to_dict()
+
+        self._init = True
+        self._loaded = True
+
+    def load(self, data):
+        if isinstance(data, list):
+            if data.count(None) == len(data):
+                data = None
+            else:
+                fields = getattr(self, '_fields')
+                data = {field: data[i] for i, field in enumerate(fields)}
+        if data:
+            self.__init__(_loading=True, **data)
+        self._loaded = True
+        self._post_load()
+
+    def _pre_load(self):
+        pass
+
+    def _post_load(self):
+        pass
+
+    def primary_key(self):
+        return getattr(self, getattr(self, '_pkey'))
+
+    def initialized(self):
+        return self._init
+
+    def loaded(self):
+        return self._loaded
+
+    def exists(self):
+        return True if self._last else False
+
+    @classmethod
+    def ref(cls, primary_key, pipe=None):
+        obj = cls(_ref=primary_key)
+        if pipe is not None:
+            pipe.attach(obj)
+        return obj
+
+    @property
+    def _pk(self):
+        return '%s:%s' % (self.__class__.__name__,
+                          getattr(self, getattr(self, '_pkey')))
+
+    def _apply_changes(self, old, new, pipe=None):
+        raise AbstractError("extend the class to implement persistence")
+
+    @classmethod
+    def _calc_changes(cls, old, new):
+        """
+        figure out which fields have changed.
+        """
+
+        pk = old.get(getattr(cls, '_pkey')) or new.get(getattr(cls, '_pkey'))
+        if not pk:
+            raise FieldError("Missing primary key value")
+
+        response = {}
+        response['changes'] = changes = 0
+        response['primary_key'] = pk
+        response['add'] = add = {}
+        response['remove'] = rem = []
+
+        # first figure out what data needs to be persisted
+        fields = getattr(cls, '_fields')
+        for attr in fields:
+            col = fields[attr]
+
+            # get old and new values for this field
+            ov = old.get(attr)
+            nv = new.get(attr)
+
+            # not doing a full write, and old and new values are the same
+            if ov == nv:
+                continue
+
+            # looks like there are some changes.
+            changes += 1
+
+            # if the new value is empty, just flag the field to be deleted
+            # otherwise, we write the data.
+            if nv is not None:
+                persist = getattr(col, '_to_persistence')
+                _v = persist(nv)
+                if _v is None:
+                    rem.append(attr)
+                else:
+                    add[attr] = _v
+            elif ov is not None:
+                rem.append(attr)
+
+        response['changes'] = changes
+        return response
+
+    def to_dict(self):
+        """
+        Returns a copy of all data assigned to fields in this entity. Useful
+        for returning items to JSON-enabled APIs. If you want to copy an
+        entity, you should look at the ``.copy()`` method.
+        """
+        return dict(self._data)
+
+    def save(self, full=False, pipe=None):
+        """
+        Saves the current entity to Redis. Will only save changed data by
+        default, but you can force a full save by passing ``full=True``.
+        :param pipe:
+        :param full:
+        """
+        self._pre_save()
+        new = self.to_dict()
+        last = self._last
+        if full or self._new:
+            last = {}
+        ret = self._apply_changes(last, new, pipe=pipe)
+        self._new = False
+        self._last = new
+        if ret:
+            self._post_save()
+        return ret
+
+    def delete(self, pipe=None):
+        """
+        Deletes the entity immediately.
+        :param pipe:
+        """
+        self._pre_delete()
+        self._apply_changes(self._last, {}, pipe=pipe)
+        self._post_delete()
+
+    def _pre_delete(self):
+        pass
+
+    def _post_delete(self):
+        pass
+
+    def _pre_save(self):
+        pass
+
+    def _post_save(self):
+        pass
+
+    def copy(self):
+        """
+        Creates a shallow copy of the given entity (any entities that can be
+        retrieved from a OneToMany relationship will not be copied).
+        """
+        x = self.to_dict()
+        x.pop(getattr(self, '_pkey'))
+        return self.__class__(**x)
+
+    @classmethod
+    def get(cls, ids):
+        """
+        Will fetch one or more entities of this type from the persistent store.
+
+        Used like::
+
+            MyModel.get(5)
+            MyModel.get([1, 6, 2, 4])
+            MyModel.get(email='testuser1@yahoo.com')
+            MyModel.get(email=['testuser1@yahoo.com', 'testuser2@gmail.com'])
+
+        Passing a list or a tuple will return multiple entities, in the same
+        order that the ids were passed.
+        :param ids:
+        """
+        raise AbstractError("extend the class to implement persistence")
+
+    def __str__(self):
+        return "<%s:%s>" % (self.__class__.__name__, self.primary_key())
+
+    def __repr__(self):
+        return json.dumps({self.__class__.__name__: self._data})
+
+
+class Model(Oma):
+
+    @classmethod
+    def db(cls):
+        """
+        Tries to get the _db attribute from a model. Barring that, gets the
+        global default connection.
+        """
+        try:
+            return getattr(cls, '_db')
+        except AttributeError:
+            return default_connection()
+
+    def _apply_changes(self, old, new, pipe=None):
+        state = self._calc_changes(old, new)
+        if not state['changes']:
+            return 0
+
+        if pipe is None:
+            pipe = Pipeline()
+            do_commit = True
+        else:
+            do_commit = False
+
+        # apply add to the record
+        if state['add']:
+            pipe.hmset(self, state['add'])
+
+        # apply remove to the record
+        if state['remove']:
+            pipe.hdel(self, *state['remove'])
+
+        if do_commit:
+            pipe.execute()
+
+        return state['changes']
+
+    def prepare(self, pipe):
+        fields = getattr(self, '_fields', None)
+        if fields is None:
+            pipe.hmgetall(self.redis_key(self.primary_key()))
+        else:
+            pipe.hmget(self.redis_key(self.primary_key()), *fields)
+        return lambda data: self.load(data)
+
+    @classmethod
+    def get(cls, ids):
+        # prepare the ids
+        single = not isinstance(ids, (list, set))
+        if single:
+            ids = [ids]
+
+        # Fetch data
+        models = [cls.ref(i) for i in ids]
+        Pipeline().hydrate(models)
+        models = [model for model in models if model.exists()]
+
+        if single:
+            return models[0] if models else None
+        return models
+
+    @classmethod
+    def ids(cls):
+        if rediscluster and \
+                isinstance(cls.db(), rediscluster.StrictRedisCluster):
+            conns = [redis.StrictRedis(host=node['host'], port=node['port'])
+                     for node in cls.db().connection_pool.nodes.nodes.values()
+                     if node.get('server_type', None) == 'master']
+        else:
+            conns = [cls.db()]
+        cursor = 0
+        keyspace = cls._ks()
+        redis_pattern = "%s{*}" % keyspace
+        pattern = re.compile(r'^%s\{(.*)\}$' % keyspace)
+        for conn in conns:
+            while True:
+                cursor, keys = conn.scan(
+                    cursor=cursor,
+                    match=redis_pattern,
+                    count=500)
+                for key in keys:
+                    res = pattern.match(key)
+                    if not res:
+                        continue
+                    yield res.group(1)
+                if cursor == 0:
+                    break
+
+    @classmethod
+    def redis_key(cls, pk):
+        """
+        primary key string used to access the data in redis.
+        :param pk:
+        """
+        return '%s{%s}' % (cls._ks(), pk)
+
+    @classmethod
+    def _ks(cls):
+        """
+        The internal keyspace used to namespace the data in redis.
+        defaults to the model class name.
+        """
+        return getattr(cls, '_keyspace', cls.__name__)

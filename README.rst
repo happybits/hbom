@@ -1,0 +1,1 @@
+Redis Obect Model extending oma.

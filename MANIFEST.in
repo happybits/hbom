@@ -1,0 +1,2 @@
+include VERSION README.rst LICENCE
+recursive-include *.py
