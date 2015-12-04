@@ -1,5 +1,5 @@
 """
-REDISOM - redis object model
+hbom - Happy Bits Object Model
 
 """
 from .redis_backend import *  # noqa
