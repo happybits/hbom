@@ -4,7 +4,7 @@ from setup import hbom, clear_redis_testdata
 import unittest
 
 
-class Model(hbom.Model):
+class Model(hbom.RedisModel):
     attr = hbom.StringField()
     _pk_index_enable = False
     _pk_lock_enable = False

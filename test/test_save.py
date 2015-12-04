@@ -5,7 +5,7 @@ import unittest
 from setup import hbom, clear_redis_testdata
 
 
-class TTSave(hbom.Model):
+class TTSave(hbom.RedisModel):
     a = hbom.IntegerField()
     b = hbom.IntegerField(default=7, unique=True)
     req = hbom.StringField(required=True)

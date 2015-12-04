@@ -1,34 +1,36 @@
 #!/usr/bin/env python
 
-import unittest
-from setup import hbom, clear_redis_testdata
-import redis
 import time
+import unittest
 from uuid import uuid4
 
+import redis
 
-class Foo(hbom.Model):
+from setup import hbom, clear_redis_testdata
+
+
+class Foo(hbom.RedisModel):
     a = hbom.StringField(required=True)
     _keyspace = 'TT_foo'
 
 
-class Bar(hbom.SortedSet):
+class Bar(hbom.RedisSortedSet):
     _keyspace = 'TT_bar'
     a = hbom.StringField()
 
 
-class Bazz(hbom.Model):
+class Bazz(hbom.RedisModel):
     _keyspace = 'TT_bazz'
     a = hbom.StringField()
 
 
-class Quux(hbom.Model):
+class Quux(hbom.RedisModel):
     _keyspace = 'TT_quux'
     a = hbom.StringField()
     _db = redis.StrictRedis(db=14)
 
 
-class ErrorModel(hbom.Model):
+class ErrorModel(hbom.RedisModel):
     _keyspace = 'TT_err'
     a = hbom.StringField()
     _db = redis.StrictRedis(db=14, port=3322191)

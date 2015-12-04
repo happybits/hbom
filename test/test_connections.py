@@ -1,21 +1,22 @@
 #!/usr/bin/env python
-from setup import hbom
 import unittest
+
 import redis
+from setup import hbom
 
 
-class TTFoo(hbom.Model):
+class TTFoo(hbom.RedisModel):
     pass
 
 
-class TTBar(hbom.Model):
+class TTBar(hbom.RedisModel):
     _db = redis.StrictRedis(db=14)
 
 
 class TestConnections(unittest.TestCase):
     def test_connections(self):
-        self.assertEqual(TTFoo.db(), hbom.default_connection())
-        self.assertNotEqual(TTBar.db(), hbom.default_connection())
+        self.assertEqual(TTFoo.db(), hbom.default_redis_connection())
+        self.assertNotEqual(TTBar.db(), hbom.default_redis_connection())
 
 
 if __name__ == '__main__':

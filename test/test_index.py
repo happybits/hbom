@@ -4,7 +4,7 @@ import unittest
 from setup import hbom, clear_redis_testdata
 
 
-class IndexModel(hbom.Index):
+class IndexModel(hbom.RedisIndex):
     pass
 
 

@@ -3,12 +3,12 @@ import unittest
 from setup import hbom, clear_redis_testdata
 
 
-class Demo(hbom.Model):
+class Demo(hbom.RedisModel):
     id = hbom.StringField(primary=True)
     _keyspace = 'TT_idTest'
 
 
-class SortedSetDemo(hbom.SortedSet):
+class SortedSetDemo(hbom.redis_backend.RedisSortedSet):
     _keyspace = 'TT_SortedidTest'
 
 

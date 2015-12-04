@@ -4,7 +4,7 @@ from setup import hbom, clear_redis_testdata
 import unittest
 
 
-class LightModel(hbom.Model):
+class LightModel(hbom.RedisModel):
     attr = hbom.StringField()
 
 

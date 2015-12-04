@@ -4,7 +4,7 @@ import unittest
 from setup import hbom, clear_redis_testdata
 
 
-class HashModel(hbom.Hash):
+class HashModel(hbom.RedisHash):
     pass
 
 
@@ -21,7 +21,7 @@ class HashTestCase(unittest.TestCase):
         h['name'] = "Richard Cypher"
         h['real_name'] = "Richard Rahl"
 
-        pulled = hbom.default_connection().hgetall(h.key)
+        pulled = hbom.redis_backend.default_redis_connection().hgetall(h.key)
         self.assertEqual({'name': "Richard Cypher",
                           'real_name': "Richard Rahl"}, pulled)
 
@@ -30,7 +30,7 @@ class HashTestCase(unittest.TestCase):
                          h.hvals())
 
         del h['name']
-        pulled = hbom.default_connection().hgetall(h.key)
+        pulled = hbom.redis_backend.default_redis_connection().hgetall(h.key)
         self.assertEqual({'real_name': "Richard Rahl"}, pulled)
         self.assert_('real_name' in h)
         h.dict = {"new_hash": "YEY"}

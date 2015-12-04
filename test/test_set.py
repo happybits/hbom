@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
 import unittest
+
 from setup import hbom, clear_redis_testdata
 
 
-class SampleSet(hbom.Set):
+class SampleSet(hbom.RedisSet):
     pass
 
 
@@ -54,7 +55,7 @@ class SetTestCase(unittest.TestCase):
         s.sadd('b')
         self.assertEqual(2, s.scard())
         self.assert_(s.sismember('a'))
-        conn = hbom.default_connection()
+        conn = hbom.redis_backend.default_redis_connection()
         conn.sadd('other_set', 'a')
         conn.sadd('other_set', 'b')
         conn.sadd('other_set', 'c')

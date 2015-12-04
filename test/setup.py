@@ -1,7 +1,6 @@
 import os
 import sys
 import redis
-
 try:
     # noinspection PyPackageRequirements
     import rediscluster
@@ -12,12 +11,7 @@ except ImportError:
 # not against the global package
 sys.path.insert(1, os.path.dirname(os.path.dirname(__file__)))
 
-# noinspection PyPep8
-import hbom
-# noinspection PyPep8
-import hbom.model
-
-# noinspection PyPep8
+import hbom  # noqa
 
 TEST_REDIS_CLUSTER = False
 
@@ -28,11 +22,11 @@ if rediscluster and TEST_REDIS_CLUSTER:
 else:
     r = redis.StrictRedis(db=15)
 
-hbom.set_default_connection(r)
+hbom.set_default_redis_connection(r)
 
 
 def clear_redis_testdata():
-    conn = hbom.default_connection()
+    conn = hbom.default_redis_connection()
     if rediscluster and isinstance(conn, rediscluster.StrictRedisCluster):
         conns = [redis.StrictRedis(host=node['host'], port=node['port'])
                  for node in conn.connection_pool.nodes.nodes.values()
@@ -43,7 +37,7 @@ def clear_redis_testdata():
         conn.flushdb()
 
 
-class Toma(hbom.model.Oma):
+class Toma(hbom.BaseModel):
     def _apply_changes(self, old, new, pipe=None):
         response = self._calc_changes(old, new)
         self._change_state = response

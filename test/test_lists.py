@@ -4,7 +4,7 @@ import unittest
 from setup import hbom, clear_redis_testdata
 
 
-class ListModel(hbom.List):
+class ListModel(hbom.RedisList):
     pass
 
 

@@ -14,7 +14,7 @@ class Pipeline(object):
         pass in a model object that hasn't been hydrated yet.
         We set up a pipeline callback handler that will read the data from the
         database and populate it into the object.
-        the redis call will be pipelined on hydrate or execute.
+        the call will be pipelined on hydrate or execute.
         :param force:
         :param model:
         """
@@ -34,7 +34,7 @@ class Pipeline(object):
         return False
 
     def execute(self):
-        # only need to use threads if we have more than one redis connection
+        # only need to use threads if we have more than one connection
         if len(self.pipes) > 1:
             threads = []
             # kick off all the threads
@@ -53,7 +53,7 @@ class Pipeline(object):
                 if t.exc_info:
                     raise t.exc_info[0], t.exc_info[1], t.exc_info[2]
         else:
-            # only one redis connection, no threads needed.
+            # only one connection, no threads needed.
             # keep it simple.
             for conn_id, pipe in self.pipes.items():
                 for i, result in enumerate(pipe.execute()):

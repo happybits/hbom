@@ -1,21 +1,136 @@
-# -*- coding: utf-8 -*-
-# doctest: +ELLIPSIS
-
-import redis
-import re
 import hashlib
+import re
+import redis
+from . import model
+from .pipeline import Pipeline
+from .exceptions import OperationUnsupportedException
 
 try:
-    # noinspection PyPackageRequirements
-    import rediscluster
+    import rediscluster  # noqa
 except ImportError:
     rediscluster = None
 
-from .settings import *  # noqa
-from .pipeline import Pipeline
+__all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex',
+           'RedisSet', 'RedisSortedSet', 'RedisHash', 'RedisDistributedHash',
+           'default_redis_connection', 'set_default_redis_connection']
 
-__all__ = ['Container', 'String', 'Set', 'List', 'SortedSet', 'Hash',
-           'DistributedHash', 'Index', 'OperationUnsupportedException']
+
+class RedisModel(model.BaseModel):
+
+    @classmethod
+    def db(cls):
+        """
+        Tries to get the _db attribute from a model. Barring that, gets the
+        global default connection.
+        """
+        try:
+            return getattr(cls, '_db')
+        except AttributeError:
+            return default_redis_connection()
+
+    def _apply_changes(self, old, new, pipe=None):
+        state = self._calc_changes(old, new)
+        if not state['changes']:
+            return 0
+
+        if pipe is None:
+            pipe = Pipeline()
+            do_commit = True
+        else:
+            do_commit = False
+
+        # apply add to the record
+        if state['add']:
+            pipe.hmset(self, state['add'])
+
+        # apply remove to the record
+        if state['remove']:
+            pipe.hdel(self, *state['remove'])
+
+        if do_commit:
+            pipe.execute()
+
+        return state['changes']
+
+    def prepare(self, pipe):
+        fields = getattr(self, '_fields', None)
+        if fields is None:
+            pipe.hmgetall(self.redis_key(self.primary_key()))
+        else:
+            pipe.hmget(self.redis_key(self.primary_key()), *fields)
+        return lambda data: self.load(data)
+
+    @classmethod
+    def get(cls, ids):
+        # prepare the ids
+        single = not isinstance(ids, (list, set))
+        if single:
+            ids = [ids]
+
+        # Fetch data
+        models = [cls.ref(i) for i in ids]
+        Pipeline().hydrate(models)
+        models = [model for model in models if model.exists()]
+
+        if single:
+            return models[0] if models else None
+        return models
+
+    @classmethod
+    def ids(cls):
+        if rediscluster and \
+                isinstance(cls.db(), rediscluster.StrictRedisCluster):
+            conns = [redis.StrictRedis(host=node['host'], port=node['port'])
+                     for node in cls.db().connection_pool.nodes.nodes.values()
+                     if node.get('server_type', None) == 'master']
+        else:
+            conns = [cls.db()]
+        cursor = 0
+        keyspace = cls._ks()
+        redis_pattern = "%s{*}" % keyspace
+        pattern = re.compile(r'^%s\{(.*)\}$' % keyspace)
+        for conn in conns:
+            while True:
+                cursor, keys = conn.scan(
+                    cursor=cursor,
+                    match=redis_pattern,
+                    count=500)
+                for key in keys:
+                    res = pattern.match(key)
+                    if not res:
+                        continue
+                    yield res.group(1)
+                if cursor == 0:
+                    break
+
+    @classmethod
+    def redis_key(cls, pk):
+        """
+        primary key string used to access the data in redis.
+        :param pk:
+        """
+        return '%s{%s}' % (cls._ks(), pk)
+
+    @classmethod
+    def _ks(cls):
+        """
+        The internal keyspace used to namespace the data in redis.
+        defaults to the model class name.
+        """
+        return getattr(cls, '_keyspace', cls.__name__)
+
+
+REDIS_CONNECTION = redis.StrictRedis()
+
+
+def default_redis_connection():
+    return REDIS_CONNECTION
+
+
+def set_default_redis_connection(r):
+    global REDIS_CONNECTION
+    REDIS_CONNECTION = r
+
 
 default_expire_time = 60
 
@@ -27,7 +142,7 @@ def _parse_values(values):
     return values
 
 
-class Container(object):
+class RedisContainer(object):
     """
     Base class for all containers. This class should not
     be used and does not provide anything except the ``db``
@@ -44,7 +159,7 @@ class Container(object):
     def db(cls):
         db = getattr(cls, '_db', None)
         if db is None:
-            return default_connection()
+            return default_redis_connection()
         else:
             return db
 
@@ -145,7 +260,7 @@ class Container(object):
         return getattr(cls, '_keyspace', cls.__name__)
 
 
-class String(Container):
+class RedisString(RedisContainer):
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
@@ -198,7 +313,7 @@ class String(Container):
             return self.db().incrbyfloat(self.key, value)
 
 
-class Set(Container):
+class RedisSet(RedisContainer):
     """
     .. default-domain:: set
 
@@ -336,7 +451,7 @@ class Set(Container):
     __len__ = scard
 
 
-class List(Container):
+class RedisList(RedisContainer):
     """
     This class represent a list object as seen in redis.
     """
@@ -584,7 +699,7 @@ class List(Container):
     append = rpush
 
 
-class SortedSet(Container):
+class RedisSortedSet(RedisContainer):
     """
     This class represents a SortedSet in redis.
     Use it if you want to arrange your set in any order.
@@ -1044,7 +1159,7 @@ class SortedSet(Container):
     remove = zrem
 
 
-class Hash(Container):
+class RedisHash(RedisContainer):
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
@@ -1214,7 +1329,7 @@ class Hash(Container):
     __contains__ = hexists
 
 
-class DistributedHash(Container):
+class RedisDistributedHash(RedisContainer):
     _shards = 1000
 
     def __repr__(self):
@@ -1319,7 +1434,7 @@ class DistributedHash(Container):
                 self.redis_sharded_key(field), field, increment)
 
 
-class Index(Hash):
+class RedisIndex(RedisHash):
     @classmethod
     def redis_key(cls, shard):
         return getattr(cls, '_key_tpl', cls.__name__ + ":%s:u") % shard
@@ -1352,7 +1467,3 @@ class Index(Hash):
     @classmethod
     def set(cls, key, value, pipe=None):
         return cls.shard(key, pipe=pipe).hset(key, value)
-
-
-class OperationUnsupportedException(Exception):
-    pass

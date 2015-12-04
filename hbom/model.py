@@ -1,11 +1,7 @@
 import json
 from uuid import uuid4
-import re
-from .settings import *  # noqa
 from .exceptions import FieldError
 from .fields import (Field, StringField)
-from .pipeline import Pipeline
-import redis
 try:
     # noinspection PyPackageRequirements
     import rediscluster
@@ -13,14 +9,14 @@ except ImportError:
     rediscluster = None
 
 
-__all__ = ['Model']
+__all__ = ['BaseModel']
 
 
 class AbstractError(RuntimeError):
     pass
 
 
-class _OmaMetaclass(type):
+class _BaseMeta(type):
     def __new__(mcs, name, bases, d):
         if name == 'Model':
             return type.__new__(mcs, name, bases, d)
@@ -72,7 +68,7 @@ class _OmaMetaclass(type):
         return model
 
 
-class Oma(object):
+class BaseModel(object):
     """
     This is the base class for all models. You subclass from this base Model
     in order to create a model with fields. As an example::
@@ -92,7 +88,7 @@ class Oma(object):
         users = User.get([2, 6, 1, 7])
 
     """
-    __metaclass__ = _OmaMetaclass
+    __metaclass__ = _BaseMeta
 
     def __init__(self, **kwargs):
 
@@ -295,108 +291,3 @@ class Oma(object):
 
     def __repr__(self):
         return json.dumps({self.__class__.__name__: self._data})
-
-
-class Model(Oma):
-
-    @classmethod
-    def db(cls):
-        """
-        Tries to get the _db attribute from a model. Barring that, gets the
-        global default connection.
-        """
-        try:
-            return getattr(cls, '_db')
-        except AttributeError:
-            return default_connection()
-
-    def _apply_changes(self, old, new, pipe=None):
-        state = self._calc_changes(old, new)
-        if not state['changes']:
-            return 0
-
-        if pipe is None:
-            pipe = Pipeline()
-            do_commit = True
-        else:
-            do_commit = False
-
-        # apply add to the record
-        if state['add']:
-            pipe.hmset(self, state['add'])
-
-        # apply remove to the record
-        if state['remove']:
-            pipe.hdel(self, *state['remove'])
-
-        if do_commit:
-            pipe.execute()
-
-        return state['changes']
-
-    def prepare(self, pipe):
-        fields = getattr(self, '_fields', None)
-        if fields is None:
-            pipe.hmgetall(self.redis_key(self.primary_key()))
-        else:
-            pipe.hmget(self.redis_key(self.primary_key()), *fields)
-        return lambda data: self.load(data)
-
-    @classmethod
-    def get(cls, ids):
-        # prepare the ids
-        single = not isinstance(ids, (list, set))
-        if single:
-            ids = [ids]
-
-        # Fetch data
-        models = [cls.ref(i) for i in ids]
-        Pipeline().hydrate(models)
-        models = [model for model in models if model.exists()]
-
-        if single:
-            return models[0] if models else None
-        return models
-
-    @classmethod
-    def ids(cls):
-        if rediscluster and \
-                isinstance(cls.db(), rediscluster.StrictRedisCluster):
-            conns = [redis.StrictRedis(host=node['host'], port=node['port'])
-                     for node in cls.db().connection_pool.nodes.nodes.values()
-                     if node.get('server_type', None) == 'master']
-        else:
-            conns = [cls.db()]
-        cursor = 0
-        keyspace = cls._ks()
-        redis_pattern = "%s{*}" % keyspace
-        pattern = re.compile(r'^%s\{(.*)\}$' % keyspace)
-        for conn in conns:
-            while True:
-                cursor, keys = conn.scan(
-                    cursor=cursor,
-                    match=redis_pattern,
-                    count=500)
-                for key in keys:
-                    res = pattern.match(key)
-                    if not res:
-                        continue
-                    yield res.group(1)
-                if cursor == 0:
-                    break
-
-    @classmethod
-    def redis_key(cls, pk):
-        """
-        primary key string used to access the data in redis.
-        :param pk:
-        """
-        return '%s{%s}' % (cls._ks(), pk)
-
-    @classmethod
-    def _ks(cls):
-        """
-        The internal keyspace used to namespace the data in redis.
-        defaults to the model class name.
-        """
-        return getattr(cls, '_keyspace', cls.__name__)

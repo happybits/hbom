@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
 import unittest
+
 from setup import hbom, clear_redis_testdata
 
 
-class SortedSetModel(hbom.SortedSet):
+class SortedSetModel(hbom.RedisSortedSet):
     pass
 
 

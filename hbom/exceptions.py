@@ -40,3 +40,7 @@ class InvalidFieldValue(FieldError):
 
 class LockException(Exception):
     """Raised when unable to obtain a lock for a key"""
+
+
+class OperationUnsupportedException(Exception):
+    pass

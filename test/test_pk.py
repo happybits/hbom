@@ -4,7 +4,7 @@ from uuid import uuid4
 from setup import hbom, clear_redis_testdata
 
 
-class PkModel(hbom.Model):
+class PkModel(hbom.RedisModel):
     myid = hbom.StringField(primary=True, default=lambda: str(uuid4()))
 
 

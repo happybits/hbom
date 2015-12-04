@@ -5,7 +5,7 @@ import unittest
 from setup import hbom, clear_redis_testdata
 
 
-class SampleModel(hbom.Model):
+class SampleModel(hbom.RedisModel):
     created_at = hbom.FloatField(default=time.time)
     req = hbom.StringField(required=True)
 
