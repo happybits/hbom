@@ -226,7 +226,6 @@ class BaseModel(object):
         :param pipe:
         :param full:
         """
-        self._pre_save()
         new = self.to_dict()
         last = self._last
         if full or self._new:
@@ -234,8 +233,6 @@ class BaseModel(object):
         ret = self._apply_changes(last, new, pipe=pipe)
         self._new = False
         self._last = new
-        if ret:
-            self._post_save()
         return ret
 
     def delete(self, pipe=None):
@@ -243,21 +240,7 @@ class BaseModel(object):
         Deletes the entity immediately.
         :param pipe:
         """
-        self._pre_delete()
         self._apply_changes(self._last, {}, pipe=pipe)
-        self._post_delete()
-
-    def _pre_delete(self):
-        pass
-
-    def _post_delete(self):
-        pass
-
-    def _pre_save(self):
-        pass
-
-    def _post_save(self):
-        pass
 
     def copy(self):
         """

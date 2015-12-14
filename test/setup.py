@@ -1,15 +1,22 @@
 import os
 import sys
 import redis
+import redislite
 try:
     # noinspection PyPackageRequirements
     import rediscluster
 except ImportError:
     rediscluster = None
 
+TEST_DIR = os.path.dirname(__file__)
+ROOT_DIR = os.path.dirname(TEST_DIR)
+
+TEST_DB = os.path.join(TEST_DIR, '.redis.db')
+
+
 # put our path in front so we can be sure we are testing locally
 # not against the global package
-sys.path.insert(1, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(1, ROOT_DIR)
 
 import hbom  # noqa
 
@@ -20,7 +27,7 @@ if rediscluster and TEST_REDIS_CLUSTER:
                      for port in xrange(7000, 7003)]
     r = rediscluster.StrictRedisCluster(startup_nodes=startup_nodes)
 else:
-    r = redis.StrictRedis(db=15)
+    r = redislite.StrictRedis(TEST_DB)
 
 hbom.set_default_redis_connection(r)
 

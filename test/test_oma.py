@@ -77,8 +77,7 @@ class TestModel(unittest.TestCase):
 
     def test_repr(self):
         x = OmaModel(a=1, b=2, req='test')
-        self.assertEqual(repr(x), json.dumps({'OmaModel': x.to_dict()}))
-        print repr(x)
+        self.assertEqual(json.loads(repr(x)), {'OmaModel': x.to_dict()})
 
 
 if __name__ == '__main__':

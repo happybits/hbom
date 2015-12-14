@@ -5,8 +5,10 @@ import unittest
 from uuid import uuid4
 
 import redis
+import redislite
 
-from setup import hbom, clear_redis_testdata
+from setup import hbom, clear_redis_testdata, TEST_DIR
+import os
 
 
 class Foo(hbom.RedisModel):
@@ -27,13 +29,19 @@ class Bazz(hbom.RedisModel):
 class Quux(hbom.RedisModel):
     _keyspace = 'TT_quux'
     a = hbom.StringField()
-    _db = redis.StrictRedis(db=14)
+    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_pipe.db'))
 
 
 class ErrorModel(hbom.RedisModel):
     _keyspace = 'TT_err'
     a = hbom.StringField()
     _db = redis.StrictRedis(db=14, port=3322191)
+
+
+class Sample(hbom.RedisModel):
+    a = hbom.StringField(primary=True, required=True)
+    b = hbom.IntegerField()
+    _keyspace = 'TT_sample'
 
 
 class TestPipeline(unittest.TestCase):
@@ -45,30 +53,25 @@ class TestPipeline(unittest.TestCase):
 
     def test_pipeline_model(self):
         pipe = hbom.Pipeline()
-        i = '1'
-        ref = Foo.ref(i)
-        now = str(time.time())
-        write_response = pipe.hset(ref, 'foo', now)
-        read_response = pipe.hget(ref, 'foo')
-
-        self.assertEqual(write_response.key, i)
-        self.assertEqual(write_response.data, None)
-
-        self.assertEqual(read_response.key, i)
-        self.assertEqual(read_response.data, None)
-
+        i = 'abc123'
+        now = int(time.time())
+        s = Sample(a=i)
+        s.b = now
+        s.save(pipe=pipe)
+        r = Sample.ref(i, pipe=pipe)
+        self.assertIsNone(Sample.get(i))
+        self.assertIsNone(r.b)
         pipe.execute()
-
-        self.assertEqual(write_response.data, 1)
-        self.assertEqual(read_response.data, str(now))
+        self.assertEqual(Sample.get(i).b, now)
+        self.assertEqual(r.b, now)
 
     def test_pipeline_container(self):
         pipe = hbom.Pipeline()
         i = 1
-        ref = Bar(i)
+        ref = Bar(i, pipe=pipe)
         now = time.time()
-        write_response = pipe.zadd(ref, now, 'a')
-        read_response = pipe.zrange(ref, 0, -1, withscores=True)
+        write_response = ref.zadd('a', now)
+        read_response = ref.zrange(0, -1, withscores=True)
 
         self.assertEqual(write_response.key, 1)
         self.assertEqual(write_response.data, None)
@@ -80,16 +83,6 @@ class TestPipeline(unittest.TestCase):
 
         self.assertEqual(write_response.data, 1)
         self.assertEqual(read_response.data, [('a', now)])
-
-    def test_model_multi_ref(self):
-        pipe = hbom.Pipeline()
-        refs = [Foo.ref(str(i)) for i in xrange(1, 50)]
-        [pipe.hset(ref, 'foo', ref.primary_key()) for ref in refs]
-        read_responses = [pipe.hget(ref, 'foo') for ref in refs]
-        pipe.execute()
-
-        for response in read_responses:
-            self.assertEqual(response.data, response.key)
 
     def test_model_multi(self):
 
@@ -108,16 +101,14 @@ class TestPipeline(unittest.TestCase):
         objects = []
         pipe = hbom.Pipeline()
         for i in ids:
-            o = Foo.ref(i)
+            o = Foo.ref(i, pipe=pipe)
             objects.append(o)
-            pipe.attach(o)
             self.assertEqual(o.exists(), False)
 
         empty_objects = []
         for i in missing:
-            o = Foo.ref(i)
+            o = Foo.ref(i, pipe=pipe)
             empty_objects.append(o)
-            pipe.attach(o)
             self.assertEqual(o.exists(), False)
 
         pipe.execute()

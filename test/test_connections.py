@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 import unittest
-
-import redis
-from setup import hbom
+import redislite
+from setup import hbom, TEST_DIR
+import os
 
 
 class TTFoo(hbom.RedisModel):
@@ -10,7 +10,7 @@ class TTFoo(hbom.RedisModel):
 
 
 class TTBar(hbom.RedisModel):
-    _db = redis.StrictRedis(db=14)
+    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_alt.db'))
 
 
 class TestConnections(unittest.TestCase):
