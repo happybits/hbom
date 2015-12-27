@@ -11,8 +11,9 @@ import imp
 # build by doing CYTHON_ENABLED=1 python setup.py build_ext --inplace
 CYTHON_ENABLED = True if os.getenv('CYTHON_ENABLED', False) else False
 
-long_description = open('README.rst').read()
 MYDIR = path.abspath(os.path.dirname(__file__))
+long_description = open(os.path.join(MYDIR, 'README.rst')).read()
+
 version = imp.load_source('version',
                           path.join('.', 'hbom', 'version.py')).__version__
 
@@ -62,9 +63,9 @@ else:
 setup(
     name='hbom',
     version=version,
-    description='Redis object model',
+    description='Happy Bits Object Model',
     author='John Loehrer',
-    author_email='john@happybits.com',
+    author_email='john@happybits.co',
     url='https://github.com/happybits/hbom',
     packages=['hbom'],
     classifiers=[

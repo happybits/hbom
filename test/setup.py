@@ -2,6 +2,8 @@ import os
 import sys
 import redis
 import redislite
+import time
+
 try:
     # noinspection PyPackageRequirements
     import rediscluster
@@ -54,3 +56,19 @@ class Toma(hbom.BaseModel):
     def get_by(cls, **kwargs):
         cls.get_by_kwargs = kwargs
         return set()
+
+
+class Timer(object):
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.end = time.time()
+        self.secs = self.end - self.start
+        self.msecs = self.secs * 1000  # millisecs
+        if self.verbose:
+            print 'elapsed time: %f ms' % self.msecs

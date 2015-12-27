@@ -7,6 +7,7 @@ mock == 1.0.1
 docopt==0.6.2
 tox
 flake8
+line_profiler
 python-coveralls
 redis-py-cluster>=1.0.0
 Cython>=0.23.4
