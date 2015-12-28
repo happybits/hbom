@@ -51,12 +51,12 @@ class Field(object):
     """
     _allowed = ()
 
-    __slots__ = '_primary _required _default model attr'.split()
+    __slots__ = 'primary required default model attr'.split()
 
     def __init__(self, required=False, default=NULL, primary=False):
-        self._primary = primary
-        self._required = required
-        self._default = default
+        self.primary = primary
+        self.required = required
+        self.default = default
         self.model = None
         self.attr = None
 
@@ -67,21 +67,21 @@ class Field(object):
                         "this field type cannot be primary"
                     )
 
-    def _from_persistence(self, value):
+    def from_persistence(self, value):
         convert = self._allowed[0] if \
             isinstance(self._allowed, (tuple, list)) else self._allowed
         return convert(value)
 
-    def _to_persistence(self, value):
+    def to_persistence(self, value):
         if isinstance(value, long):
             return str(value)
         return repr(value)
 
-    def _validate(self, value):
+    def validate(self, value):
         if value is not None:
             if isinstance(value, self._allowed):
                 return
-        elif not self._required:
+        elif not self.required:
             return
         raise InvalidFieldValue("%s.%s has type %r but must be of type %r" % (
             self.model, self.attr, type(value), self._allowed))
@@ -93,9 +93,9 @@ class Field(object):
         model = self.model
         attr = self.attr
         if value is None:
-            default = self._default
+            default = self.default
             if default is NULL:
-                if self._required:
+                if self.required:
                     raise MissingField(
                         "%s.%s cannot be missing" % (model, attr)
                     )
@@ -103,15 +103,15 @@ class Field(object):
                 # noinspection PyCallingNonCallable
                 value = default()
             else:
-                value = self._default
+                value = self.default
         elif not isinstance(value, self._allowed):
             try:
-                value = self._from_persistence(value)
+                value = self.from_persistence(value)
             except (ValueError, TypeError) as e:
                 raise InvalidFieldValue(*e.args)
 
         if not loading:
-            self._validate(value)
+            self.validate(value)
         getattr(obj, '_data')[attr] = value
 
     def __set__(self, obj, value):
@@ -122,19 +122,19 @@ class Field(object):
             self._init_(obj, value, loading)
             return
 
-        if self._primary:
+        if self.primary:
             raise InvalidOperation("Cannot update primary key value")
 
         if value is None:
             return self.__delete__(obj)
 
         try:
-            value = self._from_persistence(value)
+            value = self.from_persistence(value)
         except (ValueError, TypeError):
             raise InvalidFieldValue(
                 "Cannot convert %r into type %s" % (value, self._allowed)
             )
-        self._validate(value)
+        self.validate(value)
         getattr(obj, '_data')[self.attr] = value
 
     def __get__(self, obj, _):
@@ -144,7 +144,7 @@ class Field(object):
             AttributeError("%s.%s does not exist" % (self.model, self.attr))
 
     def __delete__(self, obj):
-        if self._required:
+        if self.required:
             raise InvalidOperation(
                 "%s.%s cannot be null" % (self.model, self.attr)
             )
@@ -179,10 +179,10 @@ class BooleanField(Field):
     """
     _allowed = bool
 
-    def _to_persistence(self, obj):
+    def to_persistence(self, obj):
         return '1' if obj else None
 
-    def _from_persistence(self, obj):
+    def from_persistence(self, obj):
         return bool(obj)
 
 
@@ -200,10 +200,10 @@ class DecimalField(Field):
     """
     _allowed = Decimal
 
-    def _from_persistence(self, value):
+    def from_persistence(self, value):
         return Decimal(value)
 
-    def _to_persistence(self, value):
+    def to_persistence(self, value):
         return str(value)
 
 
@@ -247,10 +247,10 @@ class JsonField(Field):
     """
     _allowed = (dict, list, tuple, set)
 
-    def _to_persistence(self, value):
+    def to_persistence(self, value):
         return json.dumps(value)
 
-    def _from_persistence(self, value):
+    def from_persistence(self, value):
         if isinstance(value, self._allowed):
             return value
         return json.loads(value)
@@ -259,7 +259,7 @@ class JsonField(Field):
 class ListField(JsonField):
     _allowed = list
 
-    def _from_persistence(self, value):
+    def from_persistence(self, value):
         if isinstance(value, self._allowed):
             return value
         try:
@@ -273,7 +273,7 @@ class ListField(JsonField):
 class StringListField(Field):
     _allowed = list
 
-    def _from_persistence(self, value):
+    def from_persistence(self, value):
         if isinstance(value, self._allowed):
             return value
         try:
@@ -283,7 +283,7 @@ class StringListField(Field):
                 return value.split(',')
             raise InvalidFieldValue(*e.args)
 
-    def _to_persistence(self, value):
+    def to_persistence(self, value):
         return ",".join(value)
 
 
@@ -301,7 +301,7 @@ class StringField(Field):
     """
     _allowed = str
 
-    def _to_persistence(self, value):
+    def to_persistence(self, value):
         return value
 
 
@@ -324,10 +324,10 @@ class TextField(Field):
     """
     _allowed = unicode
 
-    def _to_persistence(self, value):
+    def to_persistence(self, value):
         return value.encode('utf-8')
 
-    def _from_persistence(self, value):
+    def from_persistence(self, value):
         if isinstance(value, str):
             return value.decode('utf-8')
         return value

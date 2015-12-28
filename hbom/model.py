@@ -42,9 +42,9 @@ class _BaseMeta(type):
                 col.attr = attr
                 col.model = name
                 fields[attr] = col
-                if getattr(col, '_required', False):
+                if col.required:
                     required.add(attr)
-                if getattr(col, '_primary', False):
+                if col.primary:
                     if d['_pkey']:
                         raise FieldError(
                             "One primary field allowed, you have: %s %s" % (
@@ -185,7 +185,7 @@ class BaseModel(object):
             # if the new value is empty, just flag the field to be deleted
             # otherwise, we write the data.
             if nv is not None:
-                persist = getattr(col, '_to_persistence')
+                persist = col.to_persistence
                 _v = persist(nv)
                 if _v is None:
                     rem.append(attr)
