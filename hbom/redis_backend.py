@@ -28,8 +28,8 @@ class RedisModel(model.BaseModel):
         except AttributeError:
             return default_redis_connection()
 
-    def _apply_changes(self, old, new, pipe=None):
-        state = self._calc_changes(old, new)
+    def _apply_changes(self, full=False, delete=False, pipe=None):
+        state = self._calc_changes(full=full, delete=delete)
         if not state['changes']:
             return 0
 

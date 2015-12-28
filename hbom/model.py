@@ -17,10 +17,9 @@ class AbstractError(RuntimeError):
 
 class _BaseMeta(type):
     def __new__(mcs, name, bases, d):
-        d['_required'] = required = set()
         d['_fields'] = fields = {}
         d['_pkey'] = None
-        d['__slots__'] = {'_new', '_data', '_init', '_last'}
+        d['__slots__'] = {'_new', '_init', '_data', '_dirty'}
 
         if name in ['BaseModel', 'RedisModel']:
             return type.__new__(mcs, name, bases, d)
@@ -43,8 +42,6 @@ class _BaseMeta(type):
                 col.attr = attr
                 col.model = name
                 fields[attr] = col
-                if col.required:
-                    required.add(attr)
                 if col.primary:
                     if d['_pkey']:
                         raise FieldError(
@@ -55,7 +52,6 @@ class _BaseMeta(type):
 
         if not d['_pkey']:
             raise FieldError('No primary field specified in %s' % name)
-
         model = type.__new__(mcs, name, bases, d)
         return model
 
@@ -85,9 +81,10 @@ class BaseModel(object):
     def __init__(self, **kwargs):
 
         self._new = not kwargs.pop('_loading', False)
-        self._data = {}
         self._init = False
-        self._last = {}
+        self._dirty = set()
+        self._data = {}
+
         ref = kwargs.pop('_ref', False)
         if ref:
             attr = getattr(self.__class__, '_pkey')
@@ -99,7 +96,7 @@ class BaseModel(object):
             setattr(self, attr, kwargs.get(attr, None))
 
         if not self._new:
-            self._last = self.to_dict()
+            self._dirty = set()
 
         self._init = True
 
@@ -117,7 +114,7 @@ class BaseModel(object):
         return getattr(self, getattr(self, '_pkey'))
 
     def exists(self):
-        return True if self._last else False
+        return True if self._data and self._init else False
 
     @classmethod
     def ref(cls, primary_key, pipe=None):
@@ -131,16 +128,16 @@ class BaseModel(object):
         return '%s:%s' % (self.__class__.__name__,
                           getattr(self, getattr(self, '_pkey')))
 
-    def _apply_changes(self, old, new, pipe=None):
+    def _apply_changes(self, full=False, delete=False, pipe=None):
         raise AbstractError("extend the class to implement persistence")
 
-    @classmethod
-    def _calc_changes(cls, old, new):
+    def _calc_changes(self, full=False, delete=False):
         """
         figure out which fields have changed.
         """
-
-        pk = old.get(getattr(cls, '_pkey')) or new.get(getattr(cls, '_pkey'))
+        cls = self.__class__
+        data = self._data
+        pk = data.get(getattr(cls, '_pkey'))
         if not pk:
             raise FieldError("Missing primary key value")
 
@@ -152,31 +149,27 @@ class BaseModel(object):
 
         # first figure out what data needs to be persisted
         fields = getattr(cls, '_fields')
-        for attr in fields:
+
+        for attr in fields.keys() if full or delete else self._dirty:
             col = fields[attr]
 
             # get old and new values for this field
-            ov = old.get(attr)
-            nv = new.get(attr)
-
-            # not doing a full write, and old and new values are the same
-            if ov == nv:
-                continue
+            nv = data.get(attr)
 
             # looks like there are some changes.
             changes += 1
 
             # if the new value is empty, just flag the field to be deleted
             # otherwise, we write the data.
-            if nv is not None:
+            if delete or nv is None:
+                rem.append(attr)
+            else:
                 persist = col.to_persistence
                 _v = persist(nv)
                 if _v is None:
                     rem.append(attr)
                 else:
                     add[attr] = _v
-            elif ov is not None:
-                rem.append(attr)
 
         response['changes'] = changes
         return response
@@ -195,13 +188,9 @@ class BaseModel(object):
         :param pipe:
         :param full:
         """
-        new = self.to_dict()
-        last = self._last
-        if full or self._new:
-            last = {}
-        ret = self._apply_changes(last, new, pipe=pipe)
+        ret = self._apply_changes(full, pipe=pipe)
         self._new = False
-        self._last = new
+        self._dirty = set()
         return ret
 
     def delete(self, pipe=None):
@@ -209,7 +198,7 @@ class BaseModel(object):
         Deletes the entity immediately.
         :param pipe:
         """
-        self._apply_changes(self._last, {}, pipe=pipe)
+        self._apply_changes(delete=True, pipe=pipe)
 
     @classmethod
     def get(cls, ids):

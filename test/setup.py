@@ -57,8 +57,8 @@ class Toma(hbom.BaseModel):
 
     id = hbom.StringField(primary=True, default=generate_uuid)
 
-    def _apply_changes(self, old, new, pipe=None):
-        response = self._calc_changes(old, new)
+    def _apply_changes(self, full=False, delete=False, pipe=None):
+        response = self._calc_changes(full=full, delete=delete)
         TomaChanges.append(response)
         return response['changes']
 
