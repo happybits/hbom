@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 
-from setup import hbom, clear_redis_testdata
+from setup import hbom, clear_redis_testdata, generate_uuid
 import unittest
 
 
 class LightModel(hbom.RedisModel):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     attr = hbom.StringField()
 
 

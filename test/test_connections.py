@@ -1,15 +1,17 @@
 #!/usr/bin/env python
 import unittest
 import redislite
-from setup import hbom, TEST_DIR
+from setup import hbom, TEST_DIR, generate_uuid
 import os
 
 
 class TTFoo(hbom.RedisModel):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     pass
 
 
 class TTBar(hbom.RedisModel):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_alt.db'))
 
 

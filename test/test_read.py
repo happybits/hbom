@@ -2,10 +2,11 @@
 
 import time
 import unittest
-from setup import hbom, clear_redis_testdata
+from setup import hbom, clear_redis_testdata, generate_uuid
 
 
 class SampleModel(hbom.RedisModel):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     created_at = hbom.FloatField(default=time.time)
     req = hbom.StringField(required=True)
 

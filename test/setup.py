@@ -3,6 +3,7 @@ import sys
 import redis
 import redislite
 import time
+import uuid
 
 try:
     # noinspection PyPackageRequirements
@@ -46,16 +47,18 @@ def clear_redis_testdata():
         conn.flushdb()
 
 
+def generate_uuid():
+    return str(uuid.uuid4())
+
+
 class Toma(hbom.BaseModel):
+
+    id = hbom.StringField(primary=True, default=generate_uuid)
+
     def _apply_changes(self, old, new, pipe=None):
         response = self._calc_changes(old, new)
         self._change_state = response
         return response['changes']
-
-    @classmethod
-    def get_by(cls, **kwargs):
-        cls.get_by_kwargs = kwargs
-        return set()
 
 
 class Timer(object):

@@ -2,10 +2,11 @@
 
 import time
 import unittest
-from setup import hbom, clear_redis_testdata
+from setup import hbom, clear_redis_testdata, generate_uuid
 
 
 class TTSave(hbom.RedisModel):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.IntegerField()
     b = hbom.IntegerField(default=7)
     req = hbom.StringField(required=True)

@@ -7,11 +7,12 @@ from uuid import uuid4
 import redis
 import redislite
 
-from setup import hbom, clear_redis_testdata, TEST_DIR
+from setup import hbom, clear_redis_testdata, TEST_DIR, generate_uuid
 import os
 
 
 class Foo(hbom.RedisModel):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField(required=True)
     _keyspace = 'TT_foo'
 
@@ -23,17 +24,20 @@ class Bar(hbom.RedisSortedSet):
 
 class Bazz(hbom.RedisModel):
     _keyspace = 'TT_bazz'
+    id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField()
 
 
 class Quux(hbom.RedisModel):
     _keyspace = 'TT_quux'
+    id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField()
     _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_pipe.db'))
 
 
 class ErrorModel(hbom.RedisModel):
     _keyspace = 'TT_err'
+    id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField()
     _db = redis.StrictRedis(db=14, port=3322191)
 

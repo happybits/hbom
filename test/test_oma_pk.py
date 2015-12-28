@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 
-from setup import hbom, Toma
+from setup import hbom, generate_uuid
 import unittest
-import uuid
 
 
-class OmaPkModel(Toma):
-    my_id = hbom.StringField(
-        default=lambda: str(uuid.uuid4()), primary=True)
+class OmaPkModel(hbom.BaseModel):
+    my_id = hbom.StringField(default=generate_uuid, primary=True)
+
+    def _apply_changes(self, old, new, pipe=None):
+        response = self._calc_changes(old, new)
+        self._change_state = response
+        return response['changes']
 
 
 class TestPK(unittest.TestCase):

@@ -51,15 +51,14 @@ class Field(object):
     """
     _allowed = ()
 
-    __slots__ = '_primary _required _default _init _model _attr'.split()
+    __slots__ = '_primary _required _default model attr'.split()
 
     def __init__(self, required=False, default=NULL, primary=False):
         self._primary = primary
         self._required = required
         self._default = default
-        self._init = False
-        self._model = None
-        self._attr = None
+        self.model = None
+        self.attr = None
 
         if primary:
             if not any(isinstance(i, self._allowed) for i in _NUMERIC):
@@ -85,15 +84,14 @@ class Field(object):
         elif not self._required:
             return
         raise InvalidFieldValue("%s.%s has type %r but must be of type %r" % (
-            self._model, self._attr, type(value), self._allowed))
+            self.model, self.attr, type(value), self._allowed))
 
-    def _init_(self, obj, model, attr, value, loading):
+    def _init_(self, obj, value, loading):
         # You shouldn't be calling this directly, but this is what sets up all
         # of the necessary pieces when creating an entity from scratch, or
-        # loading the entity from Redis
-        self._model = model
-        self._attr = attr
-
+        # loading the entity from persistence layer.
+        model = self.model
+        attr = self.attr
         if value is None:
             default = self._default
             if default is NULL:
@@ -118,8 +116,10 @@ class Field(object):
 
     def __set__(self, obj, value):
         initialized = getattr(obj, '_init', False)
+
         if not initialized:
-            self._init_(obj, *value)
+            loading = not getattr(obj, '_new', False)
+            self._init_(obj, value, loading)
             return
 
         if self._primary:
@@ -135,24 +135,24 @@ class Field(object):
                 "Cannot convert %r into type %s" % (value, self._allowed)
             )
         self._validate(value)
-        getattr(obj, '_data')[self._attr] = value
+        getattr(obj, '_data')[self.attr] = value
 
     def __get__(self, obj, _):
         try:
-            return getattr(obj, '_data')[self._attr]
+            return getattr(obj, '_data')[self.attr]
         except KeyError:
-            AttributeError("%s.%s does not exist" % (self._model, self._attr))
+            AttributeError("%s.%s does not exist" % (self.model, self.attr))
 
     def __delete__(self, obj):
         if self._required:
             raise InvalidOperation(
-                "%s.%s cannot be null" % (self._model, self._attr)
+                "%s.%s cannot be null" % (self.model, self.attr)
             )
         try:
-            getattr(obj, '_data').pop(self._attr)
+            getattr(obj, '_data').pop(self.attr)
         except KeyError:
             raise AttributeError(
-                "%s.%s does not exist" % (self._model, self._attr)
+                "%s.%s does not exist" % (self.model, self.attr)
             )
 
 

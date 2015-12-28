@@ -1,7 +1,6 @@
 import json
-from uuid import uuid4
 from .exceptions import FieldError
-from .fields import (Field, StringField)
+from .fields import Field
 try:
     # noinspection PyPackageRequirements
     import rediscluster
@@ -18,7 +17,7 @@ class AbstractError(RuntimeError):
 
 class _BaseMeta(type):
     def __new__(mcs, name, bases, d):
-        if name == 'Model':
+        if name in ['BaseModel', 'RedisModel']:
             return type.__new__(mcs, name, bases, d)
 
         d['_required'] = required = set()
@@ -34,16 +33,14 @@ class _BaseMeta(type):
                 odict.update(f)
         odict.update(d)
 
-        # need to remove id pk from any parent class
-        # it gets added again later.
-        parent_pkey = odict.pop('id', None)
-
         d = odict
 
         # validate all of our fields to ensure that they fulfill our
         # expectations
         for attr, col in d.iteritems():
             if isinstance(col, Field):
+                col.attr = attr
+                col.model = name
                 fields[attr] = col
                 if getattr(col, '_required', False):
                     required.add(attr)
@@ -54,15 +51,9 @@ class _BaseMeta(type):
                                 attr, d['_pkey'])
                         )
                     d['_pkey'] = attr
-                elif attr == 'id':
-                    raise FieldError("Cannot have non-primary key named 'id'")
 
         if not d['_pkey']:
-            d['_pkey'] = 'id'
-            pkey = parent_pkey
-            if pkey is None:
-                pkey = StringField(primary=True, default=lambda: str(uuid4()))
-            d['id'] = fields['id'] = pkey
+            raise FieldError('No primary field specified in %s' % name)
 
         model = type.__new__(mcs, name, bases, d)
         return model
@@ -93,7 +84,6 @@ class BaseModel(object):
     def __init__(self, **kwargs):
 
         self._new = not kwargs.pop('_loading', False)
-        model = self.__class__.__name__
         self._data = {}
         self._init = False
         self._loaded = False
@@ -101,17 +91,13 @@ class BaseModel(object):
         ref = kwargs.pop('_ref', False)
         if ref:
             attr = getattr(self.__class__, '_pkey')
-            cval = ref
-            data = (model, attr, cval, True)
-            setattr(self, attr, data)
+            setattr(self, attr, ref)
             self._new = False
             self._pre_load()
             return
 
         for attr in getattr(self, '_fields'):
-            cval = kwargs.get(attr, None)
-            data = (model, attr, cval, not self._new)
-            setattr(self, attr, data)
+            setattr(self, attr, kwargs.get(attr, None))
 
         if not self._new:
             self._last = self.to_dict()
