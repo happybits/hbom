@@ -17,12 +17,13 @@ class AbstractError(RuntimeError):
 
 class _BaseMeta(type):
     def __new__(mcs, name, bases, d):
-        if name in ['BaseModel', 'RedisModel']:
-            return type.__new__(mcs, name, bases, d)
-
         d['_required'] = required = set()
         d['_fields'] = fields = {}
         d['_pkey'] = None
+        d['__slots__'] = {'_new', '_data', '_init', '_last'}
+
+        if name in ['BaseModel', 'RedisModel']:
+            return type.__new__(mcs, name, bases, d)
 
         # load all fields from any base classes to allow for validation
         odict = {}

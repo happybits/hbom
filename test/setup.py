@@ -50,6 +50,8 @@ def clear_redis_testdata():
 def generate_uuid():
     return str(uuid.uuid4())
 
+TomaChanges = []
+
 
 class Toma(hbom.BaseModel):
 
@@ -57,7 +59,7 @@ class Toma(hbom.BaseModel):
 
     def _apply_changes(self, old, new, pipe=None):
         response = self._calc_changes(old, new)
-        self._change_state = response
+        TomaChanges.append(response)
         return response['changes']
 
 

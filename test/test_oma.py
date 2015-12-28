@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import json
-from setup import hbom, Toma
+from setup import hbom, Toma, TomaChanges
 import unittest
 
 
@@ -33,9 +33,10 @@ class TestModel(unittest.TestCase):
             {'a': 1, 'b': 2, 'id': 'hello', 'j': [1, 2], 'req': 'test'})
 
     def test_save_new(self):
+        del TomaChanges[:]
         x = OmaModel(a=1, b=2, req='test')
         x.save()
-        c = x._change_state
+        c = TomaChanges.pop()
         assert (isinstance(c['primary_key'], str))
 
         expected = x.to_dict()
@@ -54,8 +55,9 @@ class TestModel(unittest.TestCase):
         x.save()
         del x.b
         x.a = 3
+        del TomaChanges[:]
         x.save()
-        c = x._change_state
+        c = TomaChanges.pop()
         self.assertEqual(c['add'], {'a': '3'})
         self.assertEqual(c['remove'], ['b'])
         self.assertEqual(c['changes'], 2)
@@ -64,8 +66,9 @@ class TestModel(unittest.TestCase):
     def test_save_w_no_changes(self):
         x = OmaModel(a=1, b=2, req='test')
         x.save()
+        del TomaChanges[:]
         x.save()
-        c = x._change_state
+        c = TomaChanges.pop()
         self.assertEqual(c['add'], {})
         self.assertEqual(c['remove'], [])
         self.assertEqual(c['changes'], 0)

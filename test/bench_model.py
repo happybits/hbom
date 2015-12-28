@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from setup import hbom
+from setup import hbom, Timer
 import uuid
 import time
 import line_profiler
@@ -32,7 +32,7 @@ class Device(hbom.RedisModel):
     experiment_active = hbom.BooleanField()
 
 
-def bench():
+def bench(iterations=1000):
     secret = xid()
     user_id = xid()
     push_token = xid() + xid()
@@ -53,7 +53,7 @@ def bench():
     }
 
     device_ids = []
-    for _ in xrange(1000):
+    for _ in xrange(iterations):
 
         d = Device(**device_args)
         d.save()
@@ -73,7 +73,20 @@ def bench():
     pipe.execute()
 
 if __name__ == '__main__':
-    profile = line_profiler.LineProfiler(bench)
-    profile.add_module(hbom.model)
-    profile.run('bench()')
-    profile.print_stats()
+
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-p', '--profile',
+                        help='profile the script', action='store_true', default=False)
+    parser.add_argument('-i', '--iterations', type=int,
+                        help='number of objects to iterate through', default=1000)
+
+    args = parser.parse_args()
+    if args.profile:
+        profile = line_profiler.LineProfiler(bench)
+        profile.add_module(hbom.model)
+        profile.run('bench(%s)' % args.iterations)
+        profile.print_stats()
+    else:
+        with Timer(verbose=True) as t:
+            bench(args.iterations)
