@@ -94,6 +94,7 @@ class TestPipeline(unittest.TestCase):
         for i in xrange(1, 5):
             o = Foo(a='test')
             o.a = o.primary_key()
+            self.assertEqual(o.exists(), False)
             o.save()
             self.assertEqual(o.exists(), True)
             ids.append(o.primary_key())

@@ -114,7 +114,7 @@ class BaseModel(object):
         return getattr(self, getattr(self, '_pkey'))
 
     def exists(self):
-        return True if self._data and self._init else False
+        return True if self._data and self._init and not self._new else False
 
     @classmethod
     def ref(cls, primary_key, pipe=None):
