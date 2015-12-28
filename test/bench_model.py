@@ -74,6 +74,6 @@ def bench():
 
 if __name__ == '__main__':
     profile = line_profiler.LineProfiler(bench)
-    profile.add_module(hbom)
+    profile.add_module(hbom.model)
     profile.run('bench()')
     profile.print_stats()

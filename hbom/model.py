@@ -200,8 +200,7 @@ class BaseModel(object):
     def to_dict(self):
         """
         Returns a copy of all data assigned to fields in this entity. Useful
-        for returning items to JSON-enabled APIs. If you want to copy an
-        entity, you should look at the ``.copy()`` method.
+        for returning items to JSON-enabled APIs.
         """
         return dict(self._data)
 
@@ -227,15 +226,6 @@ class BaseModel(object):
         :param pipe:
         """
         self._apply_changes(self._last, {}, pipe=pipe)
-
-    def copy(self):
-        """
-        Creates a shallow copy of the given entity (any entities that can be
-        retrieved from a OneToMany relationship will not be copied).
-        """
-        x = self.to_dict()
-        x.pop(getattr(self, '_pkey'))
-        return self.__class__(**x)
 
     @classmethod
     def get(cls, ids):
