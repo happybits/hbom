@@ -7,7 +7,7 @@ from setup import hbom, clear_redis_testdata
 
 class TTSave(hbom.RedisModel):
     a = hbom.IntegerField()
-    b = hbom.IntegerField(default=7, unique=True)
+    b = hbom.IntegerField(default=7)
     req = hbom.StringField(required=True)
     created_at = hbom.FloatField(default=time.time)
     _keyspace = 'TT_s'

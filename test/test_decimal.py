@@ -11,9 +11,6 @@ class TestDecimalField(unittest.TestCase):
     def test_required(self):
         assert(hbom.DecimalField(required=True))
 
-    def test_unique(self):
-        assert(hbom.DecimalField(unique=True))
-
     def test_default(self):
         assert(hbom.DecimalField(default=1))
 

@@ -10,9 +10,6 @@ class TestStringField(unittest.TestCase):
     def test_required(self):
         assert hbom.StringField(required=True)
 
-    def test_unique(self):
-        assert hbom.StringField(unique=True)
-
     def test_default(self):
         assert hbom.StringField(default='a')
 

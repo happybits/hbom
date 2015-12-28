@@ -50,26 +50,22 @@ class Field(object):
           during object construction: ``MyModel(col=val)``
     """
     _allowed = ()
-    _default_ = None
 
-    __slots__ = '_primary _required _default ' \
-                '_init _unique _model _attr'.split()
+    __slots__ = '_primary _required _default _init _model _attr'.split()
 
-    def __init__(self, required=False, default=NULL, primary=False,
-                 unique=False):
+    def __init__(self, required=False, default=NULL, primary=False):
         self._primary = primary
         self._required = required
         self._default = default
-        self._unique = unique
         self._init = False
         self._model = None
         self._attr = None
 
-        if unique or primary:
+        if primary:
             if not any(isinstance(i, self._allowed) for i in _NUMERIC):
                 if self._allowed not in (str, unicode):
                     raise FieldError(
-                        "this field type cannot be unique or primary"
+                        "this field type cannot be primary"
                     )
 
     def _from_persistence(self, value):

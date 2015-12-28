@@ -10,11 +10,6 @@ class TestField(unittest.TestCase):
     def test_required(self):
         assert (hbom.Field(required=True))
 
-    def test_unique(self):
-        self.assertRaises(
-            hbom.FieldError,
-            lambda: hbom.Field(unique=True))
-
     def test_default(self):
         assert (hbom.Field(default=7))
 

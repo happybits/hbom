@@ -10,9 +10,6 @@ class TestIntegerField(unittest.TestCase):
     def test_required(self):
         assert (hbom.IntegerField(required=True))
 
-    def test_unique(self):
-        assert (hbom.IntegerField(unique=True))
-
     def test_default(self):
         assert (hbom.IntegerField(default=1))
 

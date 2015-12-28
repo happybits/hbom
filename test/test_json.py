@@ -10,11 +10,6 @@ class TestJsonField(unittest.TestCase):
     def test_required(self):
         assert (hbom.JsonField(required=True))
 
-    def test_unique(self):
-        self.assertRaises(
-            hbom.FieldError,
-            lambda: hbom.JsonField(unique=True))
-
     def test_default(self):
         assert (hbom.JsonField(default='a'))
 

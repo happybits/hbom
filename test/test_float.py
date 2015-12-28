@@ -10,9 +10,6 @@ class TestFloatField(unittest.TestCase):
     def test_required(self):
         assert (hbom.FloatField(required=True))
 
-    def test_unique(self):
-        assert (hbom.FloatField(unique=True))
-
     def test_primary(self):
         assert (hbom.FloatField(primary=True))
 

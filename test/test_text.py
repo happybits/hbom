@@ -10,9 +10,6 @@ class TestTextField(unittest.TestCase):
     def test_required(self):
         assert (hbom.TextField(required=True))
 
-    def test_unique(self):
-        assert (hbom.TextField(unique=True))
-
     def test_default(self):
         assert (hbom.TextField(default='a'))
 
