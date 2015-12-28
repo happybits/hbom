@@ -18,7 +18,7 @@ class Pipeline(object):
         :param force:
         :param model:
         """
-        if not force and model.loaded():
+        if not force and getattr(model, '_init', False):
             return False
 
         pipe, refs = self._pipe_refs(model.db())

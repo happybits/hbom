@@ -86,14 +86,12 @@ class BaseModel(object):
         self._new = not kwargs.pop('_loading', False)
         self._data = {}
         self._init = False
-        self._loaded = False
         self._last = {}
         ref = kwargs.pop('_ref', False)
         if ref:
             attr = getattr(self.__class__, '_pkey')
             setattr(self, attr, ref)
             self._new = False
-            self._pre_load()
             return
 
         for attr in getattr(self, '_fields'):
@@ -103,7 +101,6 @@ class BaseModel(object):
             self._last = self.to_dict()
 
         self._init = True
-        self._loaded = True
 
     def load(self, data):
         if isinstance(data, list):
@@ -114,23 +111,9 @@ class BaseModel(object):
                 data = {field: data[i] for i, field in enumerate(fields)}
         if data:
             self.__init__(_loading=True, **data)
-        self._loaded = True
-        self._post_load()
-
-    def _pre_load(self):
-        pass
-
-    def _post_load(self):
-        pass
 
     def primary_key(self):
         return getattr(self, getattr(self, '_pkey'))
-
-    def initialized(self):
-        return self._init
-
-    def loaded(self):
-        return self._loaded
 
     def exists(self):
         return True if self._last else False
