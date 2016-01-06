@@ -38,6 +38,7 @@ cleanall: clean cleancov cleanmeta
 	-find . -type f -name "*.so" -exec rm -f "{}" \;
 	-find . -type f -name "*.parse-index" -exec rm -f "{}" \;
 	-find . -type f -name ".redis*" -exec rm -f "{}" \;
+	-rm -rf .tox/
 
 sdist: cleanmeta
 	python setup.py sdist

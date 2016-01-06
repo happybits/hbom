@@ -1,17 +1,24 @@
 #!/usr/bin/env python
 
-# std lib
+# std-lib
 import time
 import unittest
 import os
 from uuid import uuid4
 
-# 3rd-party
-import redislite
 
 # test harness
 from setup import generate_uuid
-from setup_redis import hbom, clear_redis_testdata, TEST_DIR
+
+# test-harness
+from setup_redis import (
+    hbom,
+    clear_redis_testdata,
+    default_redis_connection,
+    skip_if_redis_disabled,
+    TEST_DIR,
+    redislite,
+)
 
 
 class TTSave(hbom.RedisModel):
@@ -21,8 +28,10 @@ class TTSave(hbom.RedisModel):
     req = hbom.StringField(required=True)
     created_at = hbom.FloatField(default=time.time)
     _keyspace = 'TT_s'
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class TestSave(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -53,8 +62,10 @@ class TestSave(unittest.TestCase):
 class LightModel(hbom.RedisModel):
     id = hbom.StringField(primary=True, default=generate_uuid)
     attr = hbom.StringField()
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class TestLightModel(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -78,8 +89,10 @@ class TestLightModel(unittest.TestCase):
 
 class PkModel(hbom.RedisModel):
     myid = hbom.StringField(primary=True, default=lambda: str(uuid4()))
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class TestPK(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -107,8 +120,10 @@ class TestPK(unittest.TestCase):
 class Demo(hbom.RedisModel):
     id = hbom.StringField(primary=True)
     _keyspace = 'TT_idTest'
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class TestModelIds(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -131,8 +146,10 @@ class SampleModel(hbom.RedisModel):
     id = hbom.StringField(primary=True, default=generate_uuid)
     created_at = hbom.FloatField(default=time.time)
     req = hbom.StringField(required=True)
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class TestRead(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -177,18 +194,19 @@ class TestRead(unittest.TestCase):
 
 class TTFoo(hbom.RedisModel):
     id = hbom.StringField(primary=True, default=generate_uuid)
-    pass
+    _db = default_redis_connection
 
 
 class TTBar(hbom.RedisModel):
     id = hbom.StringField(primary=True, default=generate_uuid)
-    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_alt.db'))
+    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_alt.db')) if redislite else None
 
 
+@skip_if_redis_disabled
 class TestConnections(unittest.TestCase):
     def test_connections(self):
-        self.assertEqual(TTFoo.db(), hbom.default_redis_connection())
-        self.assertNotEqual(TTBar.db(), hbom.default_redis_connection())
+        self.assertEqual(TTFoo.db(), default_redis_connection)
+        self.assertNotEqual(TTBar.db(), default_redis_connection)
 
 
 if __name__ == '__main__':

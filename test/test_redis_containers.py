@@ -1,13 +1,22 @@
 #!/usr/bin/env python
 
+# std-lib
 import unittest
-from setup_redis import hbom, clear_redis_testdata
+
+# test-harness
+from setup_redis import (
+    hbom,
+    clear_redis_testdata,
+    default_redis_connection,
+    skip_if_redis_disabled,
+)
 
 
 class ListModel(hbom.RedisList):
-    pass
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class ListTestCase(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -136,9 +145,10 @@ class ListTestCase(unittest.TestCase):
 
 
 class SampleSet(hbom.RedisSet):
-    pass
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class SetTestCase(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -185,7 +195,7 @@ class SetTestCase(unittest.TestCase):
         s.sadd('b')
         self.assertEqual(2, s.scard())
         self.assert_(s.sismember('a'))
-        conn = hbom.redis_backend.default_redis_connection()
+        conn = default_redis_connection
         conn.sadd('other_set', 'a')
         conn.sadd('other_set', 'b')
         conn.sadd('other_set', 'c')
@@ -193,9 +203,10 @@ class SetTestCase(unittest.TestCase):
 
 
 class SortedSetModel(hbom.RedisSortedSet):
-    pass
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class SortedSetTestCase(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -237,9 +248,10 @@ class SortedSetTestCase(unittest.TestCase):
 
 
 class HashModel(hbom.RedisHash):
-    pass
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class HashTestCase(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -253,7 +265,7 @@ class HashTestCase(unittest.TestCase):
         h['name'] = "Richard Cypher"
         h['real_name'] = "Richard Rahl"
 
-        pulled = hbom.redis_backend.default_redis_connection().hgetall(h.key)
+        pulled = default_redis_connection.hgetall(h.key)
         self.assertEqual({'name': "Richard Cypher",
                           'real_name': "Richard Rahl"}, pulled)
 
@@ -262,7 +274,7 @@ class HashTestCase(unittest.TestCase):
                          h.hvals())
 
         del h['name']
-        pulled = hbom.redis_backend.default_redis_connection().hgetall(h.key)
+        pulled = default_redis_connection.hgetall(h.key)
         self.assertEqual({'real_name': "Richard Rahl"}, pulled)
         self.assert_('real_name' in h)
         h.dict = {"new_hash": "YEY"}
@@ -279,9 +291,10 @@ class HashTestCase(unittest.TestCase):
 
 
 class IndexModel(hbom.RedisIndex):
-    pass
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class IndexTestCase(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
@@ -323,8 +336,10 @@ class IndexTestCase(unittest.TestCase):
 
 class SortedSetDemo(hbom.redis_backend.RedisSortedSet):
     _keyspace = 'TT_SortedidTest'
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class TestSortedSetIds(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()

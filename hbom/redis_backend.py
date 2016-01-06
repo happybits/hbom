@@ -1,19 +1,27 @@
+# std-lib
 import hashlib
 import re
-import redis
-from . import model
-from .pipeline import Pipeline
-from .exceptions import OperationUnsupportedException
 
+# 3rd-party (optional)
 try:
     import rediscluster  # noqa
 except ImportError:
     rediscluster = None
 
+try:
+    import redis  # noqa
+except ImportError:
+    redis = None
+
+# internal modules
+from . import model
+from .pipeline import Pipeline
+from .exceptions import OperationUnsupportedException
+
+
 __all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
-           'RedisDistributedHash', 'default_redis_connection',
-           'set_default_redis_connection']
+           'RedisDistributedHash']
 
 
 class RedisModel(model.BaseModel):
@@ -27,7 +35,7 @@ class RedisModel(model.BaseModel):
         try:
             return getattr(cls, '_db')
         except AttributeError:
-            return default_redis_connection()
+            raise RuntimeError('no db object set on %s' % cls.__name__)
 
     def _apply_changes(self, full=False, delete=False, pipe=None):
         state = self._calc_changes(full=full, delete=delete)
@@ -121,18 +129,6 @@ class RedisModel(model.BaseModel):
         return getattr(cls, '_keyspace', cls.__name__)
 
 
-REDIS_CONNECTION = redis.StrictRedis()
-
-
-def default_redis_connection():
-    return REDIS_CONNECTION
-
-
-def set_default_redis_connection(r):
-    global REDIS_CONNECTION
-    REDIS_CONNECTION = r
-
-
 default_expire_time = 60
 
 
@@ -160,7 +156,7 @@ class RedisContainer(object):
     def db(cls):
         db = getattr(cls, '_db', None)
         if db is None:
-            return default_redis_connection()
+            raise RuntimeError('no db object set on %s' % cls.__name__)
         else:
             return db
 
@@ -232,8 +228,11 @@ class RedisContainer(object):
                 redis.StrictRedis(host=node['host'], port=node['port'])
                 for node in cls.db().connection_pool.nodes.nodes.values()
                 if node.get('server_type', None) == 'master']
-        else:
+        elif redis:
             conns = [cls.db()]
+        else:
+            raise RuntimeError('redis package not imported')
+
         cursor = 0
         keyspace = cls._ks()
         redis_pattern = "%s{*}" % keyspace

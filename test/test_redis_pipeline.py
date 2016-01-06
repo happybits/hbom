@@ -6,52 +6,61 @@ import unittest
 from uuid import uuid4
 import os
 
-# 3rd-party
-import redis
-import redislite
-
 # test-harness
 from setup import generate_uuid
-from setup_redis import hbom, clear_redis_testdata, TEST_DIR
+from setup_redis import(
+    hbom,
+    clear_redis_testdata,
+    TEST_DIR,
+    default_redis_connection,
+    redis,
+    redislite,
+    skip_if_redis_disabled
+)
 
 
 class Foo(hbom.RedisModel):
     id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField(required=True)
     _keyspace = 'TT_foo'
+    _db = default_redis_connection
 
 
 class Bar(hbom.RedisSortedSet):
     _keyspace = 'TT_bar'
     a = hbom.StringField()
+    _db = default_redis_connection
 
 
 class Bazz(hbom.RedisModel):
     _keyspace = 'TT_bazz'
     id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField()
+    _db = default_redis_connection
 
 
 class Quux(hbom.RedisModel):
     _keyspace = 'TT_quux'
     id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField()
-    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_pipe.db'))
+    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_pipe.db')) if redislite else None
 
 
 class ErrorModel(hbom.RedisModel):
     _keyspace = 'TT_err'
     id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField()
-    _db = redis.StrictRedis(db=14, port=3322191)
+    _db = redis.StrictRedis(db=14, port=3322191) if redis else None
 
 
 class Sample(hbom.RedisModel):
     a = hbom.StringField(primary=True, required=True)
     b = hbom.IntegerField()
     _keyspace = 'TT_sample'
+    _db = default_redis_connection
 
 
+@skip_if_redis_disabled
 class TestPipeline(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
