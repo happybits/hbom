@@ -92,7 +92,7 @@ class BaseModel(object):
             self._new = False
             return
 
-        for attr in getattr(self, '_fields'):
+        for attr in self._fields:
             setattr(self, attr, kwargs.get(attr, None))
 
         if not self._new:
@@ -105,13 +105,12 @@ class BaseModel(object):
             if data.count(None) == len(data):
                 data = None
             else:
-                fields = getattr(self, '_fields')
-                data = {field: data[i] for i, field in enumerate(fields)}
+                data = {field: data[i] for i, field in enumerate(self._fields)}
         if data:
             self.__init__(_loading=True, **data)
 
     def primary_key(self):
-        return getattr(self, getattr(self, '_pkey'))
+        return getattr(self, self._pkey)
 
     def exists(self):
         return True if self._data and self._init and not self._new else False

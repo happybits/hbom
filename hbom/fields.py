@@ -1,4 +1,4 @@
-import json
+from .compat import json
 from decimal import Decimal
 from .exceptions import *  # noqa
 
@@ -51,7 +51,7 @@ class Field(object):
     """
     _allowed = ()
 
-    __slots__ = 'primary required default model attr'.split()
+    __slots__ = 'primary required default model convert attr'.split()
 
     def __init__(self, required=False, default=NULL, primary=False):
         self.primary = primary
@@ -112,9 +112,10 @@ class Field(object):
 
         if not loading:
             self.validate(value)
+            if value is not None:
+                getattr(obj, '_dirty').add(attr)
+
         getattr(obj, '_data')[attr] = value
-        if value is not None:
-            getattr(obj, '_dirty').add(attr)
 
     def __set__(self, obj, value):
         initialized = getattr(obj, '_init', False)
@@ -145,7 +146,7 @@ class Field(object):
 
     def __get__(self, obj, _):
         try:
-            return getattr(obj, '_data')[self.attr]
+            return obj._data[self.attr]
         except KeyError:
             AttributeError("%s.%s does not exist" % (self.model, self.attr))
 
@@ -308,6 +309,9 @@ class StringField(Field):
             col = String()
     """
     _allowed = str
+
+    def from_persistence(self, value):
+        return value
 
     def to_persistence(self, value):
         return value

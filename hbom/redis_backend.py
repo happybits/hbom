@@ -10,9 +10,10 @@ try:
 except ImportError:
     rediscluster = None
 
-__all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex', 'RedisString',
-           'RedisSet', 'RedisSortedSet', 'RedisHash', 'RedisDistributedHash',
-           'default_redis_connection', 'set_default_redis_connection']
+__all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex',
+           'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
+           'RedisDistributedHash', 'default_redis_connection',
+           'set_default_redis_connection']
 
 
 class RedisModel(model.BaseModel):

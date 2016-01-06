@@ -1,65 +1,32 @@
+# std lib
 import os
 import sys
-import redis
-import redislite
 import time
 import uuid
 
-try:
-    # noinspection PyPackageRequirements
-    import rediscluster
-except ImportError:
-    rediscluster = None
-
-TEST_DIR = os.path.dirname(__file__)
-ROOT_DIR = os.path.dirname(TEST_DIR)
-
-TEST_DB = os.path.join(TEST_DIR, '.redis.db')
-
-
 # put our path in front so we can be sure we are testing locally
 # not against the global package
+TEST_DIR = os.path.dirname(__file__)
+ROOT_DIR = os.path.dirname(TEST_DIR)
 sys.path.insert(1, ROOT_DIR)
 
+# our package
 import hbom  # noqa
-
-TEST_REDIS_CLUSTER = False
-
-if rediscluster and TEST_REDIS_CLUSTER:
-    startup_nodes = [{'host': '127.0.0.1', 'port': port}
-                     for port in xrange(7000, 7003)]
-    r = rediscluster.StrictRedisCluster(startup_nodes=startup_nodes)
-else:
-    r = redislite.StrictRedis(TEST_DB)
-
-hbom.set_default_redis_connection(r)
-
-
-def clear_redis_testdata():
-    conn = hbom.default_redis_connection()
-    if rediscluster and isinstance(conn, rediscluster.StrictRedisCluster):
-        conns = [redis.StrictRedis(host=node['host'], port=node['port'])
-                 for node in conn.connection_pool.nodes.nodes.values()
-                 if node.get('server_type', None) == 'master']
-        for conn in conns:
-            conn.flushall()
-    else:
-        conn.flushdb()
 
 
 def generate_uuid():
     return str(uuid.uuid4())
 
-TomaChanges = []
+StubModelChanges = []
 
 
-class Toma(hbom.BaseModel):
+class StubModel(hbom.BaseModel):
 
     id = hbom.StringField(primary=True, default=generate_uuid)
 
     def _apply_changes(self, full=False, delete=False, pipe=None):
         response = self._calc_changes(full=full, delete=delete)
-        TomaChanges.append(response)
+        StubModelChanges.append(response)
         return response['changes']
 
 

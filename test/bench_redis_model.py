@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 
-from setup import hbom, Timer
+# std-lib
 import uuid
 import time
 import line_profiler
+
+# test harness
+from setup import Timer
+from setup_redis import hbom
 
 
 def xid():

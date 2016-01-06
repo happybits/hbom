@@ -1,14 +1,18 @@
 #!/usr/bin/env python
 
+# std lib
 import time
 import unittest
 from uuid import uuid4
+import os
 
+# 3rd-party
 import redis
 import redislite
 
-from setup import hbom, clear_redis_testdata, TEST_DIR, generate_uuid
-import os
+# test-harness
+from setup import generate_uuid
+from setup_redis import hbom, clear_redis_testdata, TEST_DIR
 
 
 class Foo(hbom.RedisModel):

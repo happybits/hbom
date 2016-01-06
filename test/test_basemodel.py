@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 import json
-from setup import hbom, Toma, TomaChanges
+from setup import hbom, StubModel, StubModelChanges
 import unittest
 
 
-class OmaModel(Toma):
+class SampleModel(StubModel):
     a = hbom.IntegerField()
     b = hbom.IntegerField(default=7)
     req = hbom.StringField(required=True)
@@ -14,29 +14,29 @@ class OmaModel(Toma):
 
 class TestModel(unittest.TestCase):
     def test_field_error(self):
-        self.assertRaises(hbom.FieldError, OmaModel)
+        self.assertRaises(hbom.FieldError, SampleModel)
 
     def test_invalid_field_value(self):
         self.assertRaises(
             hbom.InvalidFieldValue,
-            lambda: OmaModel(a='t', req='test'))
+            lambda: SampleModel(a='t', req='test'))
 
     def test_missing_field_value(self):
         self.assertRaises(
             hbom.MissingField,
-            lambda: OmaModel(a=1, b=2))
+            lambda: SampleModel(a=1, b=2))
 
     def test_model_state(self):
-        x = OmaModel(a=1, b=2, req='test', id='hello', j=[1, 2])
+        x = SampleModel(a=1, b=2, req='test', id='hello', j=[1, 2])
         self.assertEqual(
             x.to_dict(),
             {'a': 1, 'b': 2, 'id': 'hello', 'j': [1, 2], 'req': 'test'})
 
     def test_save_new(self):
-        del TomaChanges[:]
-        x = OmaModel(a=1, b=2, req='test')
+        del StubModelChanges[:]
+        x = SampleModel(a=1, b=2, req='test')
         x.save()
-        c = TomaChanges.pop()
+        c = StubModelChanges.pop()
         assert (isinstance(c['primary_key'], str))
 
         expected = x.to_dict()
@@ -51,36 +51,53 @@ class TestModel(unittest.TestCase):
         self.assertEqual(c['primary_key'], x.primary_key())
 
     def test_save_w_changes(self):
-        x = OmaModel(a=1, b=2, req='test')
+        x = SampleModel(a=1, b=2, req='test')
         x.save()
         del x.b
         x.a = 3
-        del TomaChanges[:]
+        del StubModelChanges[:]
         x.save()
-        c = TomaChanges.pop()
+        c = StubModelChanges.pop()
         self.assertEqual(c['add'], {'a': '3'})
         self.assertEqual(c['remove'], ['b'])
         self.assertEqual(c['changes'], 2)
         self.assertEqual(c['primary_key'], x.primary_key())
 
     def test_save_w_no_changes(self):
-        x = OmaModel(a=1, b=2, req='test')
+        x = SampleModel(a=1, b=2, req='test')
         x.save()
-        del TomaChanges[:]
+        del StubModelChanges[:]
         x.save()
-        c = TomaChanges.pop()
+        c = StubModelChanges.pop()
         self.assertEqual(c['add'], {})
         self.assertEqual(c['remove'], [])
         self.assertEqual(c['changes'], 0)
         self.assertEqual(c['primary_key'], x.primary_key())
 
     def test_str(self):
-        x = OmaModel(a=1, b=2, req='test')
-        self.assertEqual(str(x), "<OmaModel:%s>" % x.primary_key())
+        x = SampleModel(a=1, b=2, req='test')
+        self.assertEqual(str(x), "<SampleModel:%s>" % x.primary_key())
 
     def test_repr(self):
-        x = OmaModel(a=1, b=2, req='test')
-        self.assertEqual(json.loads(repr(x)), {'OmaModel': x.to_dict()})
+        x = SampleModel(a=1, b=2, req='test')
+        self.assertEqual(json.loads(repr(x)), {'SampleModel': x.to_dict()})
+
+
+class TTDefault(StubModel):
+    foo = hbom.ListField(default=[])
+    bar = hbom.JsonField(default={})
+
+
+class TestDefault(unittest.TestCase):
+    def test_defaults_not_mutable(self):
+        m = TTDefault(foo=[1, 2, 3], bar={'a': 1, 'b': 2})
+        self.assertEqual(m.foo, [1, 2, 3])
+        self.assertEqual(m.bar, {'a': 1, 'b': 2})
+
+        m = TTDefault()
+
+        self.assertEqual(m.foo, [])
+        self.assertEqual(m.bar, {})
 
 
 if __name__ == '__main__':
