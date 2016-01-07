@@ -80,10 +80,13 @@ if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--profile',
-                        help='profile the script', action='store_true', default=False)
-    parser.add_argument('-i', '--iterations', type=int,
-                        help='number of objects to iterate through', default=1000)
+    parser.add_argument(
+        '-p', '--profile',
+        help='profile the script', action='store_true', default=False)
+
+    parser.add_argument(
+        '-i', '--iterations', type=int,
+        help='number of objects to iterate through', default=1000)
 
     args = parser.parse_args()
     if args.profile:

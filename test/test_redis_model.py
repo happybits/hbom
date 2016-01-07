@@ -199,7 +199,8 @@ class TTFoo(hbom.RedisModel):
 
 class TTBar(hbom.RedisModel):
     id = hbom.StringField(primary=True, default=generate_uuid)
-    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_alt.db')) if redislite else None
+    _db = redislite.StrictRedis(
+        os.path.join(TEST_DIR, '.redis_alt.db')) if redislite else None
 
 
 @skip_if_redis_disabled

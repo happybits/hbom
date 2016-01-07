@@ -43,7 +43,8 @@ class Quux(hbom.RedisModel):
     _keyspace = 'TT_quux'
     id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.StringField()
-    _db = redislite.StrictRedis(os.path.join(TEST_DIR, '.redis_pipe.db')) if redislite else None
+    _db = redislite.StrictRedis(
+        os.path.join(TEST_DIR, '.redis_pipe.db')) if redislite else None
 
 
 class ErrorModel(hbom.RedisModel):
@@ -90,10 +91,8 @@ class TestPipeline(unittest.TestCase):
         write_response = ref.zadd('a', now)
         read_response = ref.zrange(0, -1, withscores=True)
 
-        self.assertEqual(write_response.key, 1)
         self.assertEqual(write_response.data, None)
 
-        self.assertEqual(read_response.key, i)
         self.assertEqual(read_response.data, None)
 
         pipe.execute()

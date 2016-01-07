@@ -5,6 +5,9 @@ __all__ = ['Pipeline']
 
 
 class Pipeline(object):
+
+    __slots__ = ['pipes', 'refs']
+
     def __init__(self):
         self.pipes = {}
         self.refs = {}
@@ -59,26 +62,16 @@ class Pipeline(object):
                 for i, result in enumerate(pipe.execute()):
                     self.refs[conn_id][i](result)
 
-    def __getattr__(self, command):
-        def fn(*args, **kwargs):
-            redis_args = [a for a in args]
-            if command == 'eval':
-                ref = args[2]
-                redis_args[2] = ref.redis_key(ref.primary_key())
-            else:
-                ref = args[0]
-                redis_args[0] = ref.redis_key(ref.primary_key())
-            response = PipelineResponse(ref.primary_key())
-            pipe, refs = self._pipe_refs(ref.db())
-            getattr(pipe, command)(*redis_args, **kwargs)
+    def allocate_response(self, db):
 
-            def set_data(data):
-                response.data = data
+        pipe, refs = self._pipe_refs(db)
+        response = PipelineResponse()
 
-            refs.append(set_data)
-            return response
+        def set_data(data):
+            response.data = data
 
-        return fn
+        refs.append(set_data)
+        return response, pipe
 
     def _pipe_refs(self, conn):
         conn_id = id(conn)
@@ -91,12 +84,14 @@ class Pipeline(object):
 
 
 class PipelineResponse(object):
-    def __init__(self, key, data=None):
-        self.key = key
+
+    __slots__ = ['data']
+
+    def __init__(self, data=None):
         self.data = data
 
     def to_dict(self):
-        return {'key': self.key, 'data': self.data}
+        return {'data': self.data}
 
 
 class ExecThread(threading.Thread):

@@ -321,11 +321,10 @@ class IndexTestCase(unittest.TestCase):
         IndexModel.setnx('bazz', 'c', pipe=pipe)
         IndexModel.set('bazz', 'd', pipe=pipe)
         IndexModel.setnx('bazz', 'e', pipe=pipe)
-
-        self.assertEqual(IndexModel.mget(['foo', 'bar', 'bazz']), {})
+        res = IndexModel.mget(['foo', 'bar', 'bazz'], pipe=pipe)
         pipe.execute()
         self.assertEqual(
-            IndexModel.mget(['foo', 'bar', 'bazz']),
+            {k: v.data for k, v in res.items()},
             {'foo': 'a', 'bar': 'b', 'bazz': 'd'})
 
         pipe = hbom.Pipeline()
