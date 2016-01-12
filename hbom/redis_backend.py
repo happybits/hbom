@@ -91,11 +91,18 @@ class RedisContainer(RedisConnectionMixin):
 
     def __init__(self, key, pipe=None):
         self._key = key
-        self.pipeline = RedisPipelineWrapper(instance=self, pipe=pipe) \
-            if pipe else None
+        self.pipeline = None
+        if pipe is not None:
+            self.attach(pipe)
 
     def primary_key(self):
         return self._key
+
+    def attach(self, pipe):
+        self.pipeline = RedisPipelineWrapper(instance=self, pipe=pipe)
+
+    def detach(self):
+        self.pipeline = None
 
     @property
     def key(self):
