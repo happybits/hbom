@@ -57,6 +57,13 @@ class TestSave(unittest.TestCase):
         y.delete()
         assert (TTSave.get(x.primary_key()) is None)
 
+    def test_delete_ref(self):
+        x = TTSave(a=1, b=2, req='test')
+        x.save()
+        y = TTSave.ref(x.primary_key())
+        y.delete()
+        assert (TTSave.get(x.primary_key()) is None)
+
 
 @skip_if_redis_disabled
 class TestPatch(unittest.TestCase):
