@@ -58,6 +58,36 @@ class TestSave(unittest.TestCase):
         assert (TTSave.get(x.primary_key()) is None)
 
 
+@skip_if_redis_disabled
+class TestPatch(unittest.TestCase):
+    def setUp(self):
+        clear_redis_testdata()
+
+    def tearDown(self):
+        clear_redis_testdata()
+
+    def test_patch(self):
+        x = TTSave(a=1, b=2, req='test')
+        x.save()
+
+        self.assertEqual(x.req, 'test')
+        self.assertEqual(TTSave.get(x.primary_key()).req, 'test')
+
+        TTSave.patch(x.primary_key(), req='test2', b=3, a=None)
+
+        x = TTSave.get(x.primary_key())
+
+        self.assertEqual(x.req, 'test2')
+        self.assertEqual(x.b, 3)
+        self.assertEqual(x.a, None)
+
+        pipe = hbom.Pipeline()
+        TTSave.patch(x.primary_key(), req='test3', pipe=pipe)
+        self.assertEqual(TTSave.get(x.primary_key()).req, 'test2')
+        pipe.execute()
+        self.assertEqual(TTSave.get(x.primary_key()).req, 'test3')
+
+
 class LightModel(hbom.RedisModel):
     id = hbom.StringField(primary=True, default=generate_uuid)
     attr = hbom.StringField()

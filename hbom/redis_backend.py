@@ -16,7 +16,7 @@ except ImportError:
 # internal modules
 from . import model
 from .pipeline import Pipeline
-from .exceptions import OperationUnsupportedException
+from .exceptions import OperationUnsupportedException, FieldError
 
 
 __all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex',
@@ -1324,3 +1324,42 @@ class RedisModel(model.BaseModel, RedisConnectionMixin):
                     yield res.group(1)
                 if cursor == 0:
                     break
+
+    @classmethod
+    def patch(cls, _pk, pipe=None, **kwargs):
+        p = Pipeline() if pipe is None else pipe
+        backend = RedisPipelineWrapper(instance=cls.ref(_pk), pipe=p)
+        redis_pk = cls.db_key(_pk)
+
+        if not _pk:
+            raise FieldError("Missing primary key value")
+
+        add = {}
+        rem = []
+
+        fields = getattr(cls, '_fields')
+
+        for k, v in kwargs.items():
+            col = fields[k]
+
+            # if the value is empty flag the field to be deleted
+            # otherwise, we write the data.
+            if v is None:
+                rem.append(k)
+            else:
+                persist = col.to_persistence
+                _v = persist(v)
+                if _v is None:
+                    rem.append(k)
+                else:
+                    add[k] = _v
+
+        if add:
+            backend.hmset(redis_pk, add)
+
+        # apply remove to the record
+        if rem:
+            backend.hdel(redis_pk, *rem)
+
+        if pipe is None:
+            p.execute()
