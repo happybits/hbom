@@ -84,6 +84,20 @@ class Pipeline(object):
             refs = self.refs[conn_id] = []
             return pipe, refs
 
+    def __getattr__(self, command):
+        def fn(*args, **kwargs):
+            db_args = [a for a in args]
+            if command == 'eval':
+                ref = args[2]
+                db_args[2] = ref.db_key(ref.primary_key())
+            else:
+                ref = args[0]
+                db_args[0] = ref.db_key(ref.primary_key())
+            response, pipe = self.allocate_response(ref)
+            getattr(pipe, command)(*db_args, **kwargs)
+            return response
+        return fn
+
 
 class PipelineResponse(object):
 

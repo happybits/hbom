@@ -100,6 +100,23 @@ class TestPipeline(unittest.TestCase):
         self.assertEqual(write_response.data, 1)
         self.assertEqual(read_response.data, [('a', now)])
 
+    def test_container_manip_by_pipe(self):
+        pipe = hbom.Pipeline()
+        i = 1
+        ref = Bar(i)
+        now = time.time()
+        write_response = pipe.zadd(ref, now, 'a')
+        read_response = pipe.zrange(ref, 0, -1, withscores=True)
+
+        self.assertEqual(write_response.data, None)
+
+        self.assertEqual(read_response.data, None)
+
+        pipe.execute()
+
+        self.assertEqual(write_response.data, 1)
+        self.assertEqual(read_response.data, [('a', now)])
+
     def test_model_multi(self):
 
         ids = []
@@ -193,6 +210,32 @@ class TestPipeline(unittest.TestCase):
         for o in objects:
             self.assertEqual(o.a, o.primary_key())
             self.assertTrue(o.exists())
+
+    def test_model_manip_by_pipe(self):
+        o = Foo(a='test')
+        o.save()
+
+        ref = Foo.ref(o.primary_key())
+
+        pipe = hbom.Pipeline()
+        data = {
+            'key1': '1',
+            'key2': '2',
+        }
+        pipe.hmset(ref, data)
+        res = pipe.hmget(ref, 'key1', 'key2')
+        self.assertEqual(res.data, None)
+        pipe.execute()
+        self.assertEqual(res.data, [data['key1'], data['key2']])
+
+        pipe = hbom.Pipeline()
+
+        pipe.delete(ref)
+
+        self.assertEqual(Foo.get(o.primary_key()).primary_key(), o.primary_key())
+        pipe.execute()
+
+        self.assertEqual(Foo.get(o.primary_key()), None)
 
     def test_multi_thread_error(self):
 
