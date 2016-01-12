@@ -37,12 +37,12 @@ def _parse_values(values):
 class RedisPipelineWrapper(object):
     __slots__ = ['invoker']
 
-    def __init__(self, db, pipe):
+    def __init__(self, instance, pipe):
         allocator = pipe.allocate_response
 
         def invoker(command):
             def fn(*args, **kwargs):
-                r, p = allocator(db)
+                r, p = allocator(instance)
                 getattr(p, command)(*args, **kwargs)
                 return r
             return fn
@@ -53,19 +53,7 @@ class RedisPipelineWrapper(object):
         return self.invoker(command)
 
 
-class RedisContainer(object):
-    """
-    Base class for all containers. This class should not
-    be used and does not provide anything except the ``db``
-    member.
-    :members:
-    db can be either pipeline or redis object
-    """
-
-    def __init__(self, key, pipe=None):
-        self._key = key
-        self.pipeline = RedisPipelineWrapper(db=self.db(), pipe=pipe) \
-            if pipe else None
+class RedisConnectionMixin(object):
 
     @classmethod
     def db(cls):
@@ -76,15 +64,42 @@ class RedisContainer(object):
             return db
 
     @classmethod
-    def redis_key(cls, key):
+    def db_pipeline(cls):
+        return cls.db().pipeline(transaction=False)
+
+    @classmethod
+    def _ks(cls):
+        """
+        The internal keyspace used to namespace the data in redis.
+        defaults to the class name.
+        """
+        return getattr(cls, '_keyspace', cls.__name__)
+
+    @classmethod
+    def db_key(cls, key):
         return '%s{%s}' % (cls._ks(), key)
+
+
+class RedisContainer(RedisConnectionMixin):
+    """
+    Base class for all containers. This class should not
+    be used and does not provide anything except the ``db``
+    member.
+    :members:
+    db can be either pipeline or redis object
+    """
+
+    def __init__(self, key, pipe=None):
+        self._key = key
+        self.pipeline = RedisPipelineWrapper(instance=self, pipe=pipe) \
+            if pipe else None
 
     def primary_key(self):
         return self._key
 
     @property
     def key(self):
-        return self.redis_key(self._key)
+        return self.db_key(self._key)
 
     @property
     def _backend(self):
@@ -166,14 +181,6 @@ class RedisContainer(object):
                     yield res.group(1)
                 if cursor == 0:
                     break
-
-    @classmethod
-    def _ks(cls):
-        """
-        The internal keyspace used to namespace the data in redis.
-        defaults to the class name.
-        """
-        return getattr(cls, '_keyspace', cls.__name__)
 
 
 class RedisString(RedisContainer):
@@ -1195,8 +1202,9 @@ class RedisDistributedHash(RedisContainer):
 
 
 class RedisIndex(RedisHash):
+
     @classmethod
-    def redis_key(cls, shard):
+    def db_key(cls, shard):
         return getattr(cls, '_key_tpl', cls.__name__ + ":%s:u") % shard
 
     @classmethod
@@ -1231,24 +1239,13 @@ class RedisIndex(RedisHash):
         return cls.shard(key, pipe=pipe).hset(key, value)
 
 
-class RedisModel(model.BaseModel):
-
-    @classmethod
-    def db(cls):
-        """
-        Tries to get the _db attribute from a model. Barring that, gets the
-        global default connection.
-        """
-        try:
-            return getattr(cls, '_db')
-        except AttributeError:
-            raise RuntimeError('no db object set on %s' % cls.__name__)
+class RedisModel(model.BaseModel, RedisConnectionMixin):
 
     def _backend(self, pipe=None):
         if pipe is None:
             return self.db()
         else:
-            return RedisPipelineWrapper(db=self.db(), pipe=pipe)
+            return RedisPipelineWrapper(instance=self, pipe=pipe)
 
     def _apply_changes(self, full=False, delete=False, pipe=None):
         state = self._calc_changes(full=full, delete=delete)
@@ -1262,7 +1259,7 @@ class RedisModel(model.BaseModel):
             do_commit = False
 
         backend = self._backend(pipe)
-        redis_pk = self.redis_key(self.primary_key())
+        redis_pk = self.db_key(self.primary_key())
 
         # apply add to the record
         if state['add']:
@@ -1280,9 +1277,9 @@ class RedisModel(model.BaseModel):
     def prepare(self, pipe):
         fields = getattr(self, '_fields', None)
         if fields is None:
-            pipe.hmgetall(self.redis_key(self.primary_key()))
+            pipe.hmgetall(self.db_key(self.primary_key()))
         else:
-            pipe.hmget(self.redis_key(self.primary_key()), *fields)
+            pipe.hmget(self.db_key(self.primary_key()), *fields)
         return lambda data: self.load(data)
 
     @classmethod
@@ -1327,19 +1324,3 @@ class RedisModel(model.BaseModel):
                     yield res.group(1)
                 if cursor == 0:
                     break
-
-    @classmethod
-    def redis_key(cls, pk):
-        """
-        primary key string used to access the data in redis.
-        :param pk:
-        """
-        return '%s{%s}' % (cls._ks(), pk)
-
-    @classmethod
-    def _ks(cls):
-        """
-        The internal keyspace used to namespace the data in redis.
-        defaults to the model class name.
-        """
-        return getattr(cls, '_keyspace', cls.__name__)

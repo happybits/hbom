@@ -24,7 +24,7 @@ class Pipeline(object):
         if not force and getattr(model, '_init', False):
             return False
 
-        pipe, refs = self._pipe_refs(model.db())
+        pipe, refs = self._pipe_refs(model)
         refs.append(model.prepare(pipe))
         return True
 
@@ -62,9 +62,9 @@ class Pipeline(object):
                 for i, result in enumerate(pipe.execute()):
                     self.refs[conn_id][i](result)
 
-    def allocate_response(self, db):
+    def allocate_response(self, instance):
 
-        pipe, refs = self._pipe_refs(db)
+        pipe, refs = self._pipe_refs(instance)
         response = PipelineResponse()
 
         def set_data(data):
@@ -73,12 +73,14 @@ class Pipeline(object):
         refs.append(set_data)
         return response, pipe
 
-    def _pipe_refs(self, conn):
+    def _pipe_refs(self, instance):
+        conn = instance.db()
+
         conn_id = id(conn)
         try:
             return self.pipes[conn_id], self.refs[conn_id]
         except KeyError:
-            pipe = self.pipes[conn_id] = conn.pipeline(transaction=False)
+            pipe = self.pipes[conn_id] = instance.db_pipeline()
             refs = self.refs[conn_id] = []
             return pipe, refs
 

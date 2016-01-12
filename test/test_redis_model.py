@@ -6,7 +6,6 @@ import unittest
 import os
 from uuid import uuid4
 
-
 # test harness
 from setup import generate_uuid
 
