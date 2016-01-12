@@ -1223,7 +1223,7 @@ class RedisIndex(RedisHash):
         mapping = {k: cls.shard(k, pipe=p).hget(k) for k in keys}
         if pipe is not None:
             return mapping
-        pipe.execute()
+        p.execute()
         return {k: v.data for k, v in mapping.items() if v.data}
 
     @classmethod
