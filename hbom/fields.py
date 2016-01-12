@@ -311,7 +311,7 @@ class StringField(Field):
     _allowed = str
 
     def from_persistence(self, value):
-        return value
+        return str(value)
 
     def to_persistence(self, value):
         return value
