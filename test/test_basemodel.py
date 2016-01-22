@@ -100,5 +100,55 @@ class TestDefault(unittest.TestCase):
         self.assertEqual(m.bar, {})
 
 
+class TestModelWithStringListField(unittest.TestCase):
+
+    @property
+    def sample(self):
+        class Sample(StubModel):
+            foo = hbom.StringListField()
+
+        return Sample
+
+    def test_with_string(self):
+        sample = self.sample(foo='test')
+        self.assertEqual(sample.foo, ['test'])
+
+    def test_with_csv(self):
+        sample = self.sample(foo='test,moo')
+        self.assertEqual(sample.foo, ['test', 'moo'])
+
+    def test_with_empty_string(self):
+        sample = self.sample(foo='')
+        self.assertEqual(sample.foo, None)
+
+    def test_with_none(self):
+        sample = self.sample(foo=None)
+        self.assertEqual(sample.foo, None)
+
+
+class TestModelWithRequiredStringListField(unittest.TestCase):
+
+    @property
+    def sample(self):
+        class Sample(StubModel):
+            foo = hbom.StringListField(required=True)
+
+        return Sample
+
+    def test_with_string(self):
+        sample = self.sample(foo='test')
+        self.assertEqual(sample.foo, ['test'])
+
+    def test_with_csv(self):
+        sample = self.sample(foo='test,moo')
+        self.assertEqual(sample.foo, ['test', 'moo'])
+
+    def test_with_empty_string(self):
+        self.assertRaises(hbom.InvalidFieldValue, lambda: self.sample(foo=''))
+
+    def test_with_none(self):
+        self.assertRaises(hbom.MissingField, lambda: self.sample(foo=None))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

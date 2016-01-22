@@ -274,26 +274,19 @@ class ListField(JsonField):
         try:
             return json.loads(value)
         except (ValueError, TypeError) as e:
-            if isinstance(value, str) and len(value) > 0:
-                return value.split(',')
+            if isinstance(value, str):
+                if len(value) > 0:
+                    return value.split(',')
+                else:
+                    return None
             raise InvalidFieldValue(*e.args)
 
 
-class StringListField(Field):
+class StringListField(ListField):
     _allowed = list
 
-    def from_persistence(self, value):
-        if isinstance(value, self._allowed):
-            return value
-        try:
-            return json.loads(value)
-        except (ValueError, TypeError) as e:
-            if isinstance(value, str) and len(value) > 0:
-                return value.split(',')
-            raise InvalidFieldValue(*e.args)
-
     def to_persistence(self, value):
-        return ",".join(value)
+        return ",".join(value) if len(value) > 0 else None
 
 
 class StringField(Field):
