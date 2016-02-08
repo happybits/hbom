@@ -357,5 +357,44 @@ class TestSortedSetIds(unittest.TestCase):
         self.assertEqual(ids, set(expected_ids))
 
 
+class SampleString(hbom.RedisString):
+    _db = default_redis_connection
+
+
+@skip_if_redis_disabled
+class TestString(unittest.TestCase):
+    def setUp(self):
+        clear_redis_testdata()
+
+    def tearDown(self):
+        clear_redis_testdata()
+
+    def test(self):
+        s = SampleString('foo')
+        res = s.set('bar')
+        self.assertEqual(res, True)
+
+        s.set('bazz')
+        self.assertEqual(res, True)
+
+        res = s.setnx('quux')
+        self.assertEqual(res, False)
+
+        self.assertEqual(s.get(), 'bazz')
+
+    def test_pipeline(self):
+        pipe = hbom.Pipeline()
+        s = SampleString('foo', pipe=pipe)
+        bar_result = s.set('bar')
+        bazz_result = s.set('bazz')
+        quux_result = s.setnx('quux')
+        get_result = s.get()
+        pipe.execute()
+
+        self.assertEqual(bar_result.data, True)
+        self.assertEqual(bazz_result.data, True)
+        self.assertEqual(quux_result.data, False)
+        self.assertEqual(get_result.data, 'bazz')
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
