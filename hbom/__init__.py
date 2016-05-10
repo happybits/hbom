@@ -3,6 +3,7 @@ hbom - Happy Bits Object Model
 
 """
 from .redis_backend import *  # noqa
+from .couchbase_backend import * # noqa
 from .fields import *  # noqa
 from .model import *  # noqa
 from .pipeline import *  # noqa
