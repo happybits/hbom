@@ -1299,7 +1299,7 @@ class RedisModel(model.BaseModel, RedisConnectionMixin):
         # Fetch data
         models = [cls.ref(i) for i in ids]
         Pipeline().hydrate(models)
-        models = [model for model in models if model.exists()]
+        models = [model for model in models if model]
 
         if single:
             return models[0] if models else None
