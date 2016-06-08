@@ -227,6 +227,14 @@ class RedisString(RedisContainer):
         """
         return self._backend.incrbyfloat(self.key, value)
 
+    def setnx(self, value):
+        """
+        Set the value as a string in the key only if the key doesn't exist.
+        :param value:
+        :return:
+        """
+        return self._backend.setnx(self.key, value)
+
 
 class RedisSet(RedisContainer):
     """

@@ -119,5 +119,20 @@ class TestJsonField(unittest.TestCase):
             hbom.JsonField(primary=True))
 
 
+class TestStringListField(unittest.TestCase):
+    def test_noargs(self):
+        assert (hbom.StringListField())
+
+    def test_required(self):
+        assert (hbom.StringListField(required=True))
+
+    def test_default(self):
+        assert (hbom.StringListField(default='a'))
+
+    def test_primary(self):
+        self.assertRaises(
+            hbom.FieldError, lambda:
+            hbom.StringListField(primary=True))
+
 if __name__ == '__main__':
     unittest.main()
