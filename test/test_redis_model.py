@@ -61,15 +61,8 @@ class TestSave(unittest.TestCase):
         x = TTSave(a=1, b=2, req='test')
         x.save()
         y = TTSave.ref(x.primary_key())
-        self.assertEqual(y.id, x.id)
         y.delete()
         assert (TTSave.get(x.primary_key()) is None)
-
-    def test_is_none(self):
-        pipe = hbom.Pipeline()
-        x = TTSave.ref('test1', pipe=pipe)
-        pipe.execute()
-        assert (not x)
 
 
 @skip_if_redis_disabled

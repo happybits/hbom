@@ -112,9 +112,6 @@ class BaseModel(object):
     def primary_key(self):
         return getattr(self, self._pkey)
 
-    def __nonzero__(self):
-        return True if self._data and self._init and not self._new else False
-
     def exists(self):
         return True if self._data and self._init and not self._new else False
 

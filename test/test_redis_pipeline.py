@@ -123,9 +123,9 @@ class TestPipeline(unittest.TestCase):
         for i in xrange(1, 5):
             o = Foo(a='test')
             o.a = o.primary_key()
-            self.assertFalse(o)
+            self.assertEqual(o.exists(), False)
             o.save()
-            self.assertTrue(o)
+            self.assertEqual(o.exists(), True)
             ids.append(o.primary_key())
 
         # throw in some ids to fetch that don't exist
@@ -136,23 +136,23 @@ class TestPipeline(unittest.TestCase):
         for i in ids:
             o = Foo.ref(i, pipe=pipe)
             objects.append(o)
-            self.assertFalse(o)
+            self.assertEqual(o.exists(), False)
 
         empty_objects = []
         for i in missing:
             o = Foo.ref(i, pipe=pipe)
             empty_objects.append(o)
-            self.assertFalse(o)
+            self.assertEqual(o.exists(), False)
 
         pipe.execute()
         # pp([object.to_dict() for object in objects ])
 
         for o in objects:
             self.assertEqual(o.a, o.primary_key())
-            self.assertTrue(o)
+            self.assertEqual(o.exists(), True)
 
         for o in empty_objects:
-            self.assertFalse(o)
+            self.assertEqual(o.exists(), False)
 
     def test_model_multi_thread(self):
 
@@ -180,7 +180,7 @@ class TestPipeline(unittest.TestCase):
         hbom.Pipeline().hydrate(objects)
         for o in objects:
             self.assertEqual(o.a, o.primary_key())
-            self.assertTrue(o)
+            self.assertTrue(o.exists())
 
     def test_model_ref_pipeline(self):
 
@@ -209,7 +209,7 @@ class TestPipeline(unittest.TestCase):
 
         for o in objects:
             self.assertEqual(o.a, o.primary_key())
-            self.assertTrue(o)
+            self.assertTrue(o.exists())
 
     def test_model_manip_by_pipe(self):
         o = Foo(a='test')
