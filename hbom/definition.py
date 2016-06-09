@@ -1,27 +1,17 @@
 import json
 from .exceptions import FieldError
 from .fields import Field
-try:
-    # noinspection PyPackageRequirements
-    import rediscluster
-except ImportError:
-    rediscluster = None
+
+__all__ = ['Definition']
 
 
-__all__ = ['BaseModel']
-
-
-class AbstractError(RuntimeError):
-    pass
-
-
-class _BaseMeta(type):
+class DefinitionMeta(type):
     def __new__(mcs, name, bases, d):
         d['_fields'] = fields = {}
         d['_pkey'] = None
         d['__slots__'] = {'_new', '_init', '_data', '_dirty'}
 
-        if name in ['BaseModel', 'RedisModel']:
+        if name in ['Definition', 'RedisModel']:
             return type.__new__(mcs, name, bases, d)
 
         # load all fields from any base classes to allow for validation
@@ -56,7 +46,7 @@ class _BaseMeta(type):
         return model
 
 
-class BaseModel(object):
+class Definition(object):
     """
     This is the base class for all models. You subclass from this base Model
     in order to create a model with fields. As an example::
@@ -76,7 +66,7 @@ class BaseModel(object):
         users = User.get([2, 6, 1, 7])
 
     """
-    __metaclass__ = _BaseMeta
+    __metaclass__ = DefinitionMeta
 
     def __init__(self, **kwargs):
 
@@ -110,27 +100,17 @@ class BaseModel(object):
             self.__init__(_loading=True, **data)
 
     def primary_key(self):
-        return getattr(self, self._pkey)
+        return getattr(self, getattr(self.__class__, '_pkey'))
 
     def exists(self):
         return True if self._data and self._init and not self._new else False
-
-    @classmethod
-    def ref(cls, primary_key, pipe=None):
-        obj = cls(_ref=primary_key)
-        if pipe is not None:
-            pipe.attach(obj)
-        return obj
 
     @property
     def _pk(self):
         return '%s:%s' % (self.__class__.__name__,
                           getattr(self, getattr(self, '_pkey')))
 
-    def _apply_changes(self, full=False, delete=False, pipe=None):
-        raise AbstractError("extend the class to implement persistence")
-
-    def _calc_changes(self, full=False, delete=False):
+    def changes_(self, full=False, delete=False):
         """
         figure out which fields have changed.
         """
@@ -141,10 +121,6 @@ class BaseModel(object):
             raise FieldError("Missing primary key value")
 
         response = {}
-        response['changes'] = changes = 0
-        response['primary_key'] = pk
-        response['add'] = add = {}
-        response['remove'] = rem = []
 
         # first figure out what data needs to be persisted
         fields = getattr(cls, '_fields')
@@ -155,23 +131,18 @@ class BaseModel(object):
             # get old and new values for this field
             nv = data.get(attr)
 
-            # looks like there are some changes.
-            changes += 1
-
             # if the new value is empty, just flag the field to be deleted
             # otherwise, we write the data.
             if delete or nv is None:
-                rem.append(attr)
+                response[attr] = None
             else:
-                persist = col.to_persistence
-                _v = persist(nv)
-                if _v is None:
-                    rem.append(attr)
-                else:
-                    add[attr] = _v
+                response[attr] = col.to_persistence(nv)
 
-        response['changes'] = changes
         return response
+
+    def persisted_(self):
+        self._new = False
+        self._dirty = set()
 
     def to_dict(self):
         """
@@ -180,42 +151,9 @@ class BaseModel(object):
         """
         return dict(self._data)
 
-    def save(self, full=False, pipe=None):
-        """
-        Saves the current entity to Redis. Will only save changed data by
-        default, but you can force a full save by passing ``full=True``.
-        :param pipe:
-        :param full:
-        """
-        ret = self._apply_changes(full, pipe=pipe)
-        self._new = False
-        self._dirty = set()
-        return ret
-
-    def delete(self, pipe=None):
-        """
-        Deletes the entity immediately.
-        :param pipe:
-        """
-        self._apply_changes(delete=True, pipe=pipe)
-
-    @classmethod
-    def get(cls, ids):
-        """
-        Will fetch one or more entities of this type from the persistent store.
-
-        Used like::
-
-            MyModel.get(5)
-            MyModel.get([1, 6, 2, 4])
-            MyModel.get(email='testuser1@yahoo.com')
-            MyModel.get(email=['testuser1@yahoo.com', 'testuser2@gmail.com'])
-
-        Passing a list or a tuple will return multiple entities, in the same
-        order that the ids were passed.
-        :param ids:
-        """
-        raise AbstractError("extend the class to implement persistence")
+    @property
+    def __dict__(self):
+        return dict(self._data)
 
     def __str__(self):
         return "<%s:%s>" % (self.__class__.__name__, self.primary_key())

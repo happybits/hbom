@@ -20,14 +20,9 @@ def generate_uuid():
 StubModelChanges = []
 
 
-class StubModel(hbom.BaseModel):
+class StubModel(hbom.Definition):
 
     id = hbom.StringField(primary=True, default=generate_uuid)
-
-    def _apply_changes(self, full=False, delete=False, pipe=None):
-        response = self._calc_changes(full=full, delete=delete)
-        StubModelChanges.append(response)
-        return response['changes']
 
 
 class Timer(object):

@@ -14,7 +14,7 @@ except ImportError:
     redis = None
 
 # internal modules
-from . import model
+from .definition import Definition
 from .pipeline import Pipeline
 from .exceptions import OperationUnsupportedException, FieldError
 
@@ -1254,7 +1254,37 @@ class RedisIndex(RedisHash):
         return cls.shard(key, pipe=pipe).hset(key, value)
 
 
-class RedisModel(model.BaseModel, RedisConnectionMixin):
+class RedisModel(Definition, RedisConnectionMixin):
+
+    @classmethod
+    def ref(cls, primary_key, pipe=None):
+        obj = cls(_ref=primary_key)
+        if pipe is not None:
+            pipe.attach(obj)
+        return obj
+
+    @property
+    def _pk(self):
+        return '%s:%s' % (self.__class__.__name__,
+                          getattr(self, getattr(self, '_pkey')))
+
+    def save(self, full=False, pipe=None):
+        """
+        Saves the current entity to Redis. Will only save changed data by
+        default, but you can force a full save by passing ``full=True``.
+        :param pipe:
+        :param full:
+        """
+        ret = self._apply_changes(full, pipe=pipe)
+        self.persisted_()
+        return ret
+
+    def delete(self, pipe=None):
+        """
+        Deletes the entity immediately.
+        :param pipe:
+        """
+        self._apply_changes(delete=True, pipe=pipe)
 
     def _backend(self, pipe=None):
         if pipe is None:
@@ -1263,8 +1293,8 @@ class RedisModel(model.BaseModel, RedisConnectionMixin):
             return RedisPipelineWrapper(instance=self, pipe=pipe)
 
     def _apply_changes(self, full=False, delete=False, pipe=None):
-        state = self._calc_changes(full=full, delete=delete)
-        if not state['changes']:
+        state = self.changes_(full=full, delete=delete)
+        if not state:
             return 0
 
         if pipe is None:
@@ -1277,17 +1307,19 @@ class RedisModel(model.BaseModel, RedisConnectionMixin):
         redis_pk = self.db_key(self.primary_key())
 
         # apply add to the record
-        if state['add']:
-            backend.hmset(redis_pk, state['add'])
+        add = {k: v for k, v in state.items() if v is not None}
+        if add:
+            backend.hmset(redis_pk, {k: v for k, v in state.items() if v is not None})
 
         # apply remove to the record
-        if state['remove']:
-            backend.hdel(redis_pk, *state['remove'])
+        remove = [k for k, v in state.items() if v is None]
+        if remove:
+            backend.hdel(redis_pk, *remove)
 
         if do_commit:
             pipe.execute()
 
-        return state['changes']
+        return len(state)
 
     def prepare(self, pipe):
         fields = getattr(self, '_fields', None)

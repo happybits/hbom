@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
 import json
-from setup import hbom, StubModel, StubModelChanges
+from setup import hbom, generate_uuid
 import unittest
 
 
-class SampleModel(StubModel):
+class SampleModel(hbom.Definition):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     a = hbom.IntegerField()
     b = hbom.IntegerField(default=7)
     req = hbom.StringField(required=True)
@@ -28,51 +29,49 @@ class TestModel(unittest.TestCase):
 
     def test_model_state(self):
         x = SampleModel(a=1, b=2, req='test', id='hello', j=[1, 2])
-        self.assertEqual(
-            x.to_dict(),
-            {'a': 1, 'b': 2, 'id': 'hello', 'j': [1, 2], 'req': 'test'})
+        expected = {'a': 1, 'b': 2, 'id': 'hello', 'j': [1, 2], 'req': 'test'}
+        self.assertEqual(x.to_dict(), expected)
+        self.assertEqual(x.__dict__, expected)
 
-    def test_save_new(self):
-        del StubModelChanges[:]
+    def test_changes(self):
         x = SampleModel(a=1, b=2, req='test')
-        x.save()
-        c = StubModelChanges.pop()
-        assert (isinstance(c['primary_key'], str))
+        c = x.changes_()
+        add = {k: v for k, v in c.items() if v is not None}
+        remove = [k for k, v in c.items() if v is None]
 
         expected = x.to_dict()
         expected.pop('j')
 
-        self.assertEqual(set(c['add'].keys()), set(expected.keys()))
+        self.assertEqual(set(add.keys()), set(expected.keys()))
         for attr in expected:
-            self.assertEqual(c['add'][attr], str(expected[attr]))
+            self.assertEqual(add[attr], str(expected[attr]))
 
-        self.assertEqual(c['remove'], [])
-        self.assertEqual(c['changes'], 4)
-        self.assertEqual(c['primary_key'], x.primary_key())
+        self.assertEqual(remove, [])
+        self.assertEqual(len(c), 4)
 
     def test_save_w_changes(self):
         x = SampleModel(a=1, b=2, req='test')
-        x.save()
+        x.persisted_()
         del x.b
         x.a = 3
-        del StubModelChanges[:]
-        x.save()
-        c = StubModelChanges.pop()
-        self.assertEqual(c['add'], {'a': '3'})
-        self.assertEqual(c['remove'], ['b'])
-        self.assertEqual(c['changes'], 2)
-        self.assertEqual(c['primary_key'], x.primary_key())
+        c = x.changes_()
+        add = {k: v for k, v in c.items() if v is not None}
+        remove = [k for k, v in c.items() if v is None]
+
+        self.assertEqual(add, {'a': '3'})
+        self.assertEqual(remove, ['b'])
+        self.assertEqual(len(c), 2)
 
     def test_save_w_no_changes(self):
         x = SampleModel(a=1, b=2, req='test')
-        x.save()
-        del StubModelChanges[:]
-        x.save()
-        c = StubModelChanges.pop()
-        self.assertEqual(c['add'], {})
-        self.assertEqual(c['remove'], [])
-        self.assertEqual(c['changes'], 0)
-        self.assertEqual(c['primary_key'], x.primary_key())
+        x.persisted_()
+        c = x.changes_()
+        add = {k: v for k, v in c.items() if v is not None}
+        remove = [k for k, v in c.items() if v is None]
+
+        self.assertEqual(add, {})
+        self.assertEqual(remove, [])
+        self.assertEqual(len(c), 0)
 
     def test_str(self):
         x = SampleModel(a=1, b=2, req='test')
@@ -83,7 +82,8 @@ class TestModel(unittest.TestCase):
         self.assertEqual(json.loads(repr(x)), {'SampleModel': x.to_dict()})
 
 
-class TTDefault(StubModel):
+class TTDefault(hbom.Definition):
+    id = hbom.StringField(primary=True, default=generate_uuid)
     foo = hbom.ListField(default=[])
     bar = hbom.JsonField(default={})
 
@@ -104,7 +104,8 @@ class TestModelWithStringListField(unittest.TestCase):
 
     @property
     def sample(self):
-        class Sample(StubModel):
+        class Sample(hbom.Definition):
+            id = hbom.StringField(primary=True, default=generate_uuid)
             foo = hbom.StringListField()
 
         return Sample
@@ -130,7 +131,8 @@ class TestModelWithRequiredStringListField(unittest.TestCase):
 
     @property
     def sample(self):
-        class Sample(StubModel):
+        class Sample(hbom.Definition):
+            id = hbom.StringField(primary=True, default=generate_uuid)
             foo = hbom.StringListField(required=True)
 
         return Sample
