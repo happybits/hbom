@@ -62,15 +62,18 @@ class Pipeline(object):
                 for i, result in enumerate(pipe.execute()):
                     self.refs[conn_id][i](result)
 
-    def allocate_response(self, instance):
-
+    def allocate_callback(self, instance, callback):
         pipe, refs = self._pipe_refs(instance)
+        refs.append(callback)
+        return pipe
+
+    def allocate_response(self, instance):
         response = PipelineResponse()
 
         def set_data(data):
             response.data = data
 
-        refs.append(set_data)
+        pipe = self.allocate_callback(instance, set_data)
         return response, pipe
 
     def _pipe_refs(self, instance):
@@ -106,8 +109,8 @@ class PipelineResponse(object):
     def __init__(self, data=None):
         self.data = data
 
-    def to_dict(self):
-        return {'data': self.data}
+    def __iter__(self):
+        yield 'data', self.data
 
 
 class ExecThread(threading.Thread):

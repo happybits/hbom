@@ -21,7 +21,7 @@ from .exceptions import OperationUnsupportedException, FieldError
 
 __all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
-           'RedisDistributedHash']
+           'RedisDistributedHash', 'RedisDefinitionPersistence']
 
 
 default_expire_time = 60
@@ -1401,6 +1401,116 @@ class RedisModel(Definition, RedisConnectionMixin):
 
         # apply remove to the record
         if rem:
+            backend.hdel(redis_pk, *rem)
+
+        if pipe is None:
+            p.execute()
+
+
+class RedisDefinitionPersistence(RedisConnectionMixin):
+
+    @classmethod
+    def save(cls, instance, pipe=None, full=False):
+        if not isinstance(instance, getattr(cls, '_definition')):
+            raise Exception()
+
+        state = instance.changes_(full=full)
+
+        def persisted(data):
+            instance.persisted_()
+
+        if not state:
+            return 0
+        p = Pipeline() if pipe is None else pipe
+        redis_pk = cls.db_key(instance.primary_key())
+
+        # apply add to the record
+        add = {k: v for k, v in state.items() if v is not None}
+        if add:
+            backend = p.allocate_callback(cls, persisted)
+            backend.hmset(redis_pk,
+                          {k: v for k, v in state.items() if v is not None})
+
+        # apply remove to the record
+        remove = [k for k, v in state.items() if v is None]
+        if remove:
+            backend = p.allocate_callback(cls, persisted)
+            backend.hdel(redis_pk, *remove)
+
+        if not pipe:
+            p.execute()
+
+        return len(state)
+
+    @classmethod
+    def delete(cls, _pk, pipe=None):
+        fields = getattr(getattr(cls, '_definition'), '_fields')
+        p = Pipeline() if pipe is None else pipe
+        response, backend = p.allocate_response(cls)
+        backend.hdel(cls.db_key(_pk), *fields)
+        if pipe is None:
+            p.execute()
+            return response.data
+        return response
+
+    @classmethod
+    def new(cls, **kwargs):
+        definition = getattr(cls, '_definition')
+        obj = definition(**kwargs)
+        return obj
+
+    @classmethod
+    def get(cls, _pk, pipe=None):
+        definition = getattr(cls, '_definition')
+        obj = definition(_ref=_pk)
+
+        def set_data(data):
+            obj.load_(data)
+
+        p = Pipeline() if pipe is None else pipe
+        backend = p.allocate_callback(cls, set_data)
+        redis_pk = cls.db_key(_pk)
+        fields = getattr(definition, '_fields')
+        backend.hmget(redis_pk, *fields)
+        if pipe is None:
+            p.execute()
+        return obj
+
+    @classmethod
+    def patch(cls, _pk, pipe=None, **kwargs):
+        definition = getattr(cls, '_definition')
+        p = Pipeline() if pipe is None else pipe
+        if not _pk:
+            raise FieldError("Missing primary key value")
+
+        add = {}
+        rem = []
+
+        fields = getattr(definition, '_fields')
+
+        for k, v in kwargs.items():
+            col = fields[k]
+
+            # if the value is empty flag the field to be deleted
+            # otherwise, we write the data.
+            if v is None:
+                rem.append(k)
+            else:
+                persist = col.to_persistence
+                _v = persist(v)
+                if _v is None:
+                    rem.append(k)
+                else:
+                    add[k] = _v
+
+        redis_pk = cls.db_key(_pk)
+        if add:
+            backend = p.allocate_callback(cls, lambda x: x)
+            backend.hmset(redis_pk, add)
+
+        # apply remove to the record
+        if rem:
+            backend = p.allocate_callback(cls, lambda x: x)
             backend.hdel(redis_pk, *rem)
 
         if pipe is None:
