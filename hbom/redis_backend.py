@@ -53,6 +53,25 @@ class RedisPipelineWrapper(object):
         return self.invoker(command)
 
 
+class RedisPipelineCallbackWrapper(object):
+    __slots__ = ['invoker']
+
+    def __init__(self, instance, callback, pipe):
+        allocator = pipe.allocate_callback
+
+        def invoker(command):
+            def fn(*args, **kwargs):
+                p = allocator(instance, callback=callback)
+                getattr(p, command)(*args, **kwargs)
+
+            return fn
+
+        self.invoker = invoker
+
+    def __getattr__(self, command):
+        return self.invoker(command)
+
+
 class RedisConnectionMixin(object):
 
     @classmethod
@@ -1423,18 +1442,20 @@ class RedisDefinitionPersistence(RedisConnectionMixin):
             return 0
         p = Pipeline() if pipe is None else pipe
         redis_pk = cls.db_key(instance.primary_key())
+        backend = RedisPipelineCallbackWrapper(
+            instance=cls,
+            callback=persisted,
+            pipe=p)
 
         # apply add to the record
         add = {k: v for k, v in state.items() if v is not None}
         if add:
-            backend = p.allocate_callback(cls, persisted)
             backend.hmset(redis_pk,
                           {k: v for k, v in state.items() if v is not None})
 
         # apply remove to the record
         remove = [k for k, v in state.items() if v is None]
         if remove:
-            backend = p.allocate_callback(cls, persisted)
             backend.hdel(redis_pk, *remove)
 
         if not pipe:
@@ -1446,8 +1467,8 @@ class RedisDefinitionPersistence(RedisConnectionMixin):
     def delete(cls, _pk, pipe=None):
         fields = getattr(getattr(cls, '_definition'), '_fields')
         p = Pipeline() if pipe is None else pipe
-        response, backend = p.allocate_response(cls)
-        backend.hdel(cls.db_key(_pk), *fields)
+        backend = RedisPipelineWrapper(cls, pipe=p)
+        response = backend.hdel(cls.db_key(_pk), *fields)
         if pipe is None:
             p.execute()
             return response.data
@@ -1468,7 +1489,10 @@ class RedisDefinitionPersistence(RedisConnectionMixin):
             obj.load_(data)
 
         p = Pipeline() if pipe is None else pipe
-        backend = p.allocate_callback(cls, set_data)
+        backend = RedisPipelineCallbackWrapper(
+            instance=cls,
+            callback=set_data,
+            pipe=pipe)
         redis_pk = cls.db_key(_pk)
         fields = getattr(definition, '_fields')
         backend.hmget(redis_pk, *fields)
@@ -1504,14 +1528,77 @@ class RedisDefinitionPersistence(RedisConnectionMixin):
                     add[k] = _v
 
         redis_pk = cls.db_key(_pk)
+        backend = RedisPipelineCallbackWrapper(
+            instance=cls,
+            callback=lambda x: x,
+            pipe=pipe)
+
         if add:
-            backend = p.allocate_callback(cls, lambda x: x)
             backend.hmset(redis_pk, add)
 
         # apply remove to the record
         if rem:
-            backend = p.allocate_callback(cls, lambda x: x)
             backend.hdel(redis_pk, *rem)
 
         if pipe is None:
             p.execute()
+
+    @classmethod
+    def persist(cls, _pk, pipe=None):
+        return cls._do_command(_pk, 'persist', pipe=pipe)
+
+    @classmethod
+    def set_expire(cls, _pk, timeout=None, pipe=None):
+        if timeout is None:
+            timeout = default_expire_time
+
+        return cls._do_command(_pk, 'expire', args=[timeout], pipe=pipe)
+
+    @classmethod
+    def clear(cls, _pk, pipe=None):
+        return cls._do_command(_pk, 'delete', pipe=pipe)
+
+    @classmethod
+    def ttl(cls, _pk, pipe=None):
+        return cls._do_command(_pk, 'ttl', pipe=pipe)
+
+    @classmethod
+    def ids(cls):
+        if rediscluster and isinstance(cls.db(), rediscluster.StrictRedisCluster):
+            conns = [redis.StrictRedis(host=node['host'], port=node['port'])
+                     for node in cls.db().connection_pool.nodes.nodes.values()
+                     if node.get('server_type', None) == 'master']
+        else:
+            conns = [cls.db()]
+        cursor = 0
+        keyspace = cls._ks()
+        redis_pattern = "%s{*}" % keyspace
+        pattern = re.compile(r'^%s\{(.*)\}$' % keyspace)
+        for conn in conns:
+            while True:
+                cursor, keys = conn.scan(
+                    cursor=cursor,
+                    match=redis_pattern,
+                    count=500)
+                for key in keys:
+                    res = pattern.match(key)
+                    if not res:
+                        continue
+                    yield res.group(1)
+                if cursor == 0:
+                    break
+
+    @classmethod
+    def _do_command(cls, _pk, command, args=None, kwargs=None, pipe=None):
+        p = Pipeline() if pipe is None else pipe
+        backend = RedisPipelineWrapper(cls, pipe=p)
+        if args is None:
+            args = ()
+        if kwargs is None:
+            kwargs = {}
+
+        response = getattr(backend, command)(cls.db_key(_pk), *args, **kwargs)
+        if pipe is None:
+            p.execute()
+            return response.data
+        return response
