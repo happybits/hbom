@@ -1263,11 +1263,6 @@ class RedisModel(Definition, RedisConnectionMixin):
             pipe.attach(obj)
         return obj
 
-    @property
-    def _pk(self):
-        return '%s:%s' % (self.__class__.__name__,
-                          getattr(self, getattr(self, '_pkey')))
-
     def save(self, full=False, pipe=None):
         """
         Saves the current entity to Redis. Will only save changed data by
@@ -1327,7 +1322,7 @@ class RedisModel(Definition, RedisConnectionMixin):
             pipe.hmgetall(self.db_key(self.primary_key()))
         else:
             pipe.hmget(self.db_key(self.primary_key()), *fields)
-        return lambda data: self.load(data)
+        return lambda data: self.load_(data)
 
     @classmethod
     def get(cls, ids):

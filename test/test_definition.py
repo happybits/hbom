@@ -30,8 +30,8 @@ class TestModel(unittest.TestCase):
     def test_model_state(self):
         x = SampleModel(a=1, b=2, req='test', id='hello', j=[1, 2])
         expected = {'a': 1, 'b': 2, 'id': 'hello', 'j': [1, 2], 'req': 'test'}
-        self.assertEqual(x.to_dict(), expected)
         self.assertEqual(x.__dict__, expected)
+        self.assertEqual(dict(x), expected)
 
     def test_changes(self):
         x = SampleModel(a=1, b=2, req='test')
@@ -39,7 +39,7 @@ class TestModel(unittest.TestCase):
         add = {k: v for k, v in c.items() if v is not None}
         remove = [k for k, v in c.items() if v is None]
 
-        expected = x.to_dict()
+        expected = dict(x)
         expected.pop('j')
 
         self.assertEqual(set(add.keys()), set(expected.keys()))
@@ -79,7 +79,7 @@ class TestModel(unittest.TestCase):
 
     def test_repr(self):
         x = SampleModel(a=1, b=2, req='test')
-        self.assertEqual(json.loads(repr(x)), {'SampleModel': x.to_dict()})
+        self.assertEqual(json.loads(repr(x)), {'SampleModel': dict(x)})
 
 
 class TTDefault(hbom.Definition):

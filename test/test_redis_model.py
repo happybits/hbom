@@ -48,7 +48,7 @@ class TestSave(unittest.TestCase):
         x.b = 4
         assert (x.save())
         y = TTSave.get(x.primary_key())
-        self.assertEqual(x.to_dict(), y.to_dict())
+        self.assertEqual(dict(x), dict(y))
 
     def test_delete(self):
         x = TTSave(a=1, b=2, req='test')
@@ -120,7 +120,7 @@ class TestLightModel(unittest.TestCase):
         assert (x.save())
         self.assertFalse(x.save())
         y = LightModel.get(x.primary_key())
-        self.assertEqual(x.to_dict(), y.to_dict())
+        self.assertEqual(dict(x), dict(y))
 
 
 class PkModel(hbom.RedisModel):
@@ -141,7 +141,7 @@ class TestPK(unittest.TestCase):
         assert x.save()
         assert x.myid
         y = PkModel.get(x.myid)
-        self.assertEqual(x.to_dict(), y.to_dict())
+        self.assertEqual(dict(x), {k: v for k, v in y})
 
     def test_save_pipe(self):
         x = PkModel()

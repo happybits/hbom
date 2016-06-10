@@ -145,8 +145,6 @@ class TestPipeline(unittest.TestCase):
             self.assertEqual(o.exists(), False)
 
         pipe.execute()
-        # pp([object.to_dict() for object in objects ])
-
         for o in objects:
             self.assertEqual(o.a, o.primary_key())
             self.assertEqual(o.exists(), True)
@@ -260,8 +258,6 @@ class TestPipeline(unittest.TestCase):
             exception = e
 
         self.assertNotEqual(exception, None)
-        # pp([object.to_dict() for object in objects ])
-
         for o in foo_objects:
             self.assertEqual(o.a, o.primary_key())
 

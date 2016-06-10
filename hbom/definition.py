@@ -90,7 +90,7 @@ class Definition(object):
 
         self._init = True
 
-    def load(self, data):
+    def load_(self, data):
         if isinstance(data, list):
             if data.count(None) == len(data):
                 data = None
@@ -104,11 +104,6 @@ class Definition(object):
 
     def exists(self):
         return True if self._data and self._init and not self._new else False
-
-    @property
-    def _pk(self):
-        return '%s:%s' % (self.__class__.__name__,
-                          getattr(self, getattr(self, '_pkey')))
 
     def changes_(self, full=False, delete=False):
         """
@@ -144,12 +139,13 @@ class Definition(object):
         self._new = False
         self._dirty = set()
 
-    def to_dict(self):
+    def __iter__(self):
         """
-        Returns a copy of all data assigned to fields in this entity. Useful
-        for returning items to JSON-enabled APIs.
+        supports coercing the object into a dictionary.
+        Returns: generator
         """
-        return dict(self._data)
+        for k, v in self._data.items():
+            yield k, v
 
     @property
     def __dict__(self):
