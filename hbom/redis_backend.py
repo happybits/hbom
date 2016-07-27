@@ -1243,9 +1243,13 @@ class RedisIndex(RedisHash):
 
     @classmethod
     def shard(cls, key, pipe=None):
-        shard_ct = getattr(cls, '_shard_count', 64)
+        shard_ct = cls.shard_count()
         keyhash = hashlib.md5(key).hexdigest()
         return cls(long(keyhash, 16) % shard_ct, pipe=pipe)
+
+    @classmethod
+    def shard_count(cls):
+        return getattr(cls, '_shard_count', 64)
 
     @classmethod
     def get(cls, key, pipe=None):
@@ -1271,6 +1275,23 @@ class RedisIndex(RedisHash):
     @classmethod
     def set(cls, key, value, pipe=None):
         return cls.shard(key, pipe=pipe).hset(key, value)
+
+    @classmethod
+    def all(cls):
+        db = cls.db()
+        keys = [cls.db_key(i) for i in
+                xrange(1, cls.shard_count())]
+        for key in keys:
+            cursor = 0
+            while True:
+                cursor, elements = db.hscan(key, cursor=cursor,
+                                            count=500)
+                if elements:
+                    for k, v in elements.items():
+                        yield k, v
+
+                if cursor == 0:
+                    break
 
 
 class RedisModel(Definition, RedisConnectionMixin):

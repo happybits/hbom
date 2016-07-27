@@ -313,6 +313,7 @@ class IndexTestCase(unittest.TestCase):
         self.assertEqual(IndexModel.get('foo'), None)
         IndexModel.setnx('foo', 'bazz')
         self.assertEqual(IndexModel.get('foo'), 'bazz')
+        self.assertEqual({k: v for k, v in IndexModel.all()}, {'foo': 'bazz'})
 
     def test_multi(self):
         pipe = hbom.Pipeline()
