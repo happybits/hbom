@@ -1280,7 +1280,7 @@ class RedisIndex(RedisHash):
     def all(cls):
         db = cls.db()
         keys = [cls.db_key(i) for i in
-                xrange(1, cls.shard_count())]
+                xrange(0, cls.shard_count() - 1)]
         for key in keys:
             cursor = 0
             while True:
