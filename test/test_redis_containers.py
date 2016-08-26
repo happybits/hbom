@@ -36,14 +36,14 @@ class ListTestCase(unittest.TestCase):
         self.assertEqual(['a', 'b', 'c', 'd', 'e', 'f'], alpha.all())
 
         # len
-        self.assertEqual(6, len(alpha))
+        self.assertEqual(6, alpha.llen())
 
         num = ListModel('num')
         num.append('1')
         num.append('2')
 
         # extend and iter
-        alpha.extend(num)
+        alpha.extend(num.all())
         self.assertEqual(
             ['a', 'b', 'c', 'd', 'e', 'f', '1', '2'],
             alpha.all())
@@ -53,9 +53,9 @@ class ListTestCase(unittest.TestCase):
             alpha.all())
 
         # contains
-        self.assertTrue('b' in alpha)
-        self.assertTrue('2' in alpha)
-        self.assertTrue('5' not in alpha)
+        self.assertTrue('b' in alpha.all())
+        self.assertTrue('2' in alpha.members)
+        self.assertTrue('5' not in alpha.members)
 
         # shift and unshift
         num.unshift('0')
@@ -80,22 +80,18 @@ class ListTestCase(unittest.TestCase):
         self.assertEqual(['a'], alpha.all())
 
         # setitem
-        alpha[0] = 'A'
+        alpha.lset(0, 'A')
         self.assertEqual(['A'], alpha.all())
 
-        # iter
         alpha.push('B')
-        for e, a in zip(alpha, ['A', 'B']):
-            self.assertEqual(a, e)
-        self.assertEqual(['A', 'B'], list(alpha))
 
         # slice
         alpha.extend(['C', 'D', 'E'])
-        self.assertEqual(['A', 'B', 'C', 'D', 'E'], alpha[:])
-        self.assertEqual(['B', 'C'], alpha[1:3])
+        self.assertEqual(['A', 'B', 'C', 'D', 'E'], alpha.members[:])
+        self.assertEqual(['B', 'C'], alpha.members[1:3])
 
         alpha.reverse()
-        self.assertEqual(['E', 'D', 'C', 'B', 'A'], list(alpha))
+        self.assertEqual(['E', 'D', 'C', 'B', 'A'], alpha.members)
 
     def test_pop_onto(self):
         a = ListModel('alpha')
@@ -175,11 +171,11 @@ class SetTestCase(unittest.TestCase):
         self.assertEqual({'oranges'}, fruits.all())
 
         # in
-        self.assertTrue('oranges' in fruits)
-        self.assertTrue('apples' not in fruits)
+        self.assertTrue('oranges' in fruits.members)
+        self.assertTrue('apples' not in fruits.members)
 
         # len
-        self.assertEqual(1, len(fruits))
+        self.assertEqual(1, fruits.scard())
 
         # pop
         self.assertEqual('oranges', fruits.pop())
@@ -220,7 +216,7 @@ class SortedSetTestCase(unittest.TestCase):
         zorted.add("2", 39)
         zorted.add({"3": '15', "4": 35})
         zorted.add({"5": 98, "6": 5})
-        self.assertEqual(6, len(zorted))
+        self.assertEqual(6, zorted.zcard())
         self.assertEqual(35, zorted.score("4"))
         self.assertEqual(0, zorted.rank("6"))
         self.assertEqual(5, zorted.revrank("6"))
@@ -231,20 +227,6 @@ class SortedSetTestCase(unittest.TestCase):
         self.assertEqual(["4", "7"], zorted.eq(35))
         self.assertEqual(["6", "3", "1"], zorted.lt(30))
         self.assertEqual(["4", "7", "2", "5"], zorted.gt(30))
-
-    def test_delegateable_methods(self):
-        zset = SortedSetModel("Person:all")
-        zset.zadd("1", 1)
-        zset.zadd("2", 2)
-        zset.zadd("3", 3)
-        zset.zadd("4", 4)
-        self.assertEqual(4, zset.zcard())
-        self.assertEqual(4, zset.zscore('4'))
-        self.assertEqual(['1', '2', '3', '4'], list(zset))
-        self.assertEqual(zset.zrange(0, -1), list(zset))
-        self.assertEqual(['4', '3', '2', '1'], zset.zrevrange(0, -1))
-        self.assertEqual(list(reversed(zset)), zset.zrevrange(0, -1))
-        self.assertEqual(list(reversed(zset)), list(zset.__reversed__()))
 
 
 class HashModel(hbom.RedisHash):
@@ -261,9 +243,9 @@ class HashTestCase(unittest.TestCase):
 
     def test_basic(self):
         h = HashModel('hkey')
-        self.assertEqual(0, len(h))
-        h['name'] = "Richard Cypher"
-        h['real_name'] = "Richard Rahl"
+        self.assertEqual(0, h.hlen())
+        h.hset('name', "Richard Cypher")
+        h.hset('real_name', "Richard Rahl")
 
         pulled = default_redis_connection.hgetall(h.key)
         self.assertEqual({'name': "Richard Cypher",
@@ -273,10 +255,10 @@ class HashTestCase(unittest.TestCase):
         self.assertEqual(["Richard Cypher", "Richard Rahl"],
                          h.hvals())
 
-        del h['name']
+        h.hdel('name')
         pulled = default_redis_connection.hgetall(h.key)
         self.assertEqual({'real_name': "Richard Rahl"}, pulled)
-        self.assert_('real_name' in h)
+        self.assertTrue('real_name' in h.hgetall())
         h.dict = {"new_hash": "YEY"}
         self.assertEqual({"new_hash": "YEY"}, h.dict)
 
@@ -396,6 +378,28 @@ class TestString(unittest.TestCase):
         self.assertEqual(bazz_result.data, True)
         self.assertEqual(quux_result.data, False)
         self.assertEqual(get_result.data, 'bazz')
+
+
+@skip_if_redis_disabled
+class TestExpire(unittest.TestCase):
+    def setUp(self):
+        clear_redis_testdata()
+
+    def tearDown(self):
+        clear_redis_testdata()
+
+    def test(self):
+        s = SampleString('foo')
+        res = s.set('bar')
+        self.assertEqual(res, True)
+        res = s.set_expire()
+        self.assertEqual(res, True)
+        p = hbom.Pipeline()
+        s = SampleString('foo', pipe=p)
+        res = s.expire(2)
+        p.execute()
+        self.assertEqual(res.data, True)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

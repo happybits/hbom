@@ -21,10 +21,23 @@ from .exceptions import OperationUnsupportedException, FieldError
 
 __all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
-           'RedisDistributedHash', 'RedisDefinitionPersistence']
+           'RedisDistributedHash', 'RedisObject']
 
 
 default_expire_time = 60
+
+lua_restorenx = """
+local key = KEYS[1]
+local pttl = ARGV[1]
+local data = ARGV[2]
+local res = redis.call('exists', key)
+if res == 0 then
+    redis.call('restore', key, pttl, data)
+    return 1
+else
+    return 0
+end
+"""
 
 
 def _parse_values(values):
@@ -45,25 +58,6 @@ class RedisPipelineWrapper(object):
                 r, p = allocator(instance)
                 getattr(p, command)(*args, **kwargs)
                 return r
-            return fn
-
-        self.invoker = invoker
-
-    def __getattr__(self, command):
-        return self.invoker(command)
-
-
-class RedisPipelineCallbackWrapper(object):
-    __slots__ = ['invoker']
-
-    def __init__(self, instance, callback, pipe):
-        allocator = pipe.allocate_callback
-
-        def invoker(command):
-            def fn(*args, **kwargs):
-                p = allocator(instance, callback=callback)
-                getattr(p, command)(*args, **kwargs)
-
             return fn
 
         self.invoker = invoker
@@ -134,7 +128,7 @@ class RedisContainer(RedisConnectionMixin):
         else:
             return self.pipeline
 
-    def clear(self):
+    def delete(self):
         """
         Remove the container from the redis storage
         > s = Set('test')
@@ -147,7 +141,9 @@ class RedisContainer(RedisConnectionMixin):
         """
         return self._backend.delete(self.key)
 
-    def set_expire(self, time=None):
+    clear = delete
+
+    def expire(self, time=None):
         """
         Allow the key to expire after ``time`` seconds.
 
@@ -171,11 +167,28 @@ class RedisContainer(RedisConnectionMixin):
 
         return self._backend.expire(self.key, time)
 
+    set_expire = expire
+
     def exists(self):
         return self._backend.exists(self.key)
 
     def eval(self, script, *args):
         return self._backend.eval(script, 1, self.key, *args)
+
+    def dump(self):
+        return self._backend.dump(self.key)
+
+    def restore(self, data, pttl=0):
+        return self.eval(lua_restorenx, pttl, data)
+
+    def ttl(self):
+        return self._backend.ttl(self.key)
+
+    def persist(self):
+        return self._backend.persist(self.key)
+
+    def object(self, subcommand):
+        return self._backend.object(subcommand, self.key)
 
     @classmethod
     def ids(cls):
@@ -323,14 +336,6 @@ class RedisSet(RedisContainer):
         return self._backend.smembers(self.key)
 
     members = property(all)
-    """
-    return the real content of the Set.
-    """
-
-    def __iter__(self):
-        if self.pipeline:
-            raise OperationUnsupportedException()
-        return self.members.__iter__()
 
     def scard(self):
         """
@@ -363,13 +368,8 @@ class RedisSet(RedisContainer):
         return self._backend.srandmember(self.key)
 
     add = sadd
-    """see sadd"""
     pop = spop
-    """see spop"""
     remove = srem
-    """see srem"""
-    __contains__ = sismember
-    __len__ = scard
 
 
 class RedisList(RedisContainer):
@@ -391,20 +391,6 @@ class RedisList(RedisContainer):
         Returns the length of the list.
         """
         return self._backend.llen(self.key)
-
-    __len__ = llen
-
-    def __getitem__(self, index):
-        if isinstance(index, int):
-            return self.lindex(index)
-        elif isinstance(index, slice):
-            indices = index.indices(len(self))
-            return self.lrange(indices[0], indices[1] - 1)
-        else:
-            raise TypeError
-
-    def __setitem__(self, index, value):
-        self.lset(index, value)
 
     def lrange(self, start, stop):
         """
@@ -525,7 +511,7 @@ class RedisList(RedisContainer):
 
         :return: None
         """
-        r = self[:]
+        r = self.members[:]
         r.reverse()
         self.clear()
         self.extend(r)
@@ -569,14 +555,10 @@ class RedisList(RedisContainer):
         """
         return self._backend.lset(self.key, idx, value)
 
-    def __iter__(self):
-        return self.members.__iter__()
-
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
     # noinspection PyRedeclaration
-    __len__ = llen
     remove = lrem
     trim = ltrim
     shift = lpop
@@ -593,16 +575,6 @@ class RedisSortedSet(RedisContainer):
     Use it if you want to arrange your set in any order.
 
     """
-
-    def __getitem__(self, index):
-        if isinstance(index, slice):
-            return self.zrange(index.start, index.stop)
-        else:
-            return self.zrange(index, index)[0]
-
-    def __contains__(self, val):
-        return self.zscore(val) is not None
-
     @property
     def members(self):
         """
@@ -617,34 +589,8 @@ class RedisSortedSet(RedisContainer):
         """
         return self.zrevrange(0, -1)
 
-    def __iter__(self):
-        return self.members.__iter__()
-
-    def __reversed__(self):
-        return self.revmembers.__iter__()
-
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
-
-    @property
-    def _min_score(self):
-        """
-        Returns the minimum score in the SortedSet.
-        """
-        try:
-            return self.zscore(self.__getitem__(0))
-        except IndexError:
-            return None
-
-    @property
-    def _max_score(self):
-        """
-        Returns the maximum score in the SortedSet.
-        """
-        try:
-            self.zscore(self.__getitem__(-1))
-        except IndexError:
-            return None
 
     def lt(self, v, limit=None, offset=None):
         """
@@ -998,9 +944,6 @@ class RedisSortedSet(RedisContainer):
         """
         return self.zrangebyscore(value, value)
 
-    def __len__(self):
-        return self.zcard()
-
     revrank = zrevrank
     score = zscore
     rank = zrank
@@ -1135,12 +1078,6 @@ class RedisHash(RedisContainer):
         :param mapping: a dict with keys and values
         """
         return self._backend.hmset(self.key, mapping)
-
-    __getitem__ = hget
-    __setitem__ = hset
-    __delitem__ = hdel
-    __len__ = hlen
-    __contains__ = hexists
 
 
 class RedisDistributedHash(RedisContainer):
@@ -1447,37 +1384,31 @@ class RedisModel(Definition, RedisConnectionMixin):
             p.execute()
 
 
-class RedisDefinitionPersistence(RedisConnectionMixin):
+class RedisObject(object):
 
     @classmethod
     def save(cls, instance, pipe=None, full=False):
-        if not isinstance(instance, getattr(cls, '_definition')):
+        if not isinstance(instance, getattr(cls, 'definition')):
             raise Exception()
 
         state = instance.changes_(full=full)
 
-        def persisted(data):
-            instance.persisted_()
-
         if not state:
             return 0
         p = Pipeline() if pipe is None else pipe
-        redis_pk = cls.db_key(instance.primary_key())
-        backend = RedisPipelineCallbackWrapper(
-            instance=cls,
-            callback=persisted,
-            pipe=p)
-
+        _pk = instance.primary_key()
+        s = getattr(cls, 'storage')(_pk, pipe=p)
         # apply add to the record
         add = {k: v for k, v in state.items() if v is not None}
         if add:
-            backend.hmset(redis_pk,
-                          {k: v for k, v in state.items() if v is not None})
+            s.hmset(add)
 
         # apply remove to the record
         remove = [k for k, v in state.items() if v is None]
         if remove:
-            backend.hdel(redis_pk, *remove)
+            s.hdel(*remove)
+
+        p.on_execute(instance.persisted_)
 
         if not pipe:
             p.execute()
@@ -1486,140 +1417,93 @@ class RedisDefinitionPersistence(RedisConnectionMixin):
 
     @classmethod
     def delete(cls, _pk, pipe=None):
-        fields = getattr(getattr(cls, '_definition'), '_fields')
-        p = Pipeline() if pipe is None else pipe
-        backend = RedisPipelineWrapper(cls, pipe=p)
-        response = backend.hdel(cls.db_key(_pk), *fields)
-        if pipe is None:
-            p.execute()
-            return response.data
-        return response
+        fields = getattr(getattr(cls, 'definition'), '_fields')
+        return getattr(cls, 'storage')(_pk, pipe=pipe).hdel(*fields)
 
     @classmethod
     def new(cls, **kwargs):
-        definition = getattr(cls, '_definition')
+        definition = getattr(cls, 'definition')
         obj = definition(**kwargs)
         return obj
 
     @classmethod
     def get(cls, _pk, pipe=None):
-        definition = getattr(cls, '_definition')
+        definition = getattr(cls, 'definition')
         obj = definition(_ref=_pk)
 
-        def set_data(data):
-            obj.load_(data)
-
         p = Pipeline() if pipe is None else pipe
-        backend = RedisPipelineCallbackWrapper(
-            instance=cls,
-            callback=set_data,
-            pipe=pipe)
-        redis_pk = cls.db_key(_pk)
+
         fields = getattr(definition, '_fields')
-        backend.hmget(redis_pk, *fields)
+        s = getattr(cls, 'storage')(_pk, pipe=p)
+        cold_storage = getattr(cls, 'coldstorage', None)
+        if cold_storage:
+            s.persist()
+        r = s.hmget(fields)
+
+        def set_data():
+            if any(v is not None for v in r.data):
+                obj.load_(r.data)
+                return
+
+            if cold_storage is None:
+                return
+
+            frozen = cold_storage.get(_pk)
+            if frozen is None:
+                return
+
+            p = Pipeline()
+            s = getattr(cls, 'storage')(_pk, pipe=p)
+            s.restore(frozen)
+            rr = s.hmget(fields)
+            p.execute()
+            obj.load_(rr.data)
+
+        p.on_execute(set_data)
+
         if pipe is None:
             p.execute()
         return obj
 
     @classmethod
-    def patch(cls, _pk, pipe=None, **kwargs):
-        definition = getattr(cls, '_definition')
-        p = Pipeline() if pipe is None else pipe
-        if not _pk:
-            raise FieldError("Missing primary key value")
+    def freeze(cls, *ids):
+        try:
+            cold_storage = getattr(cls, 'coldstorage')
+        except AttributeError:
+            raise OperationUnsupportedException()
 
-        add = {}
-        rem = []
+        p = Pipeline()
+        storage = getattr(cls, 'storage')
 
-        fields = getattr(definition, '_fields')
+        freeze_ttl = getattr(cls, 'freeze_ttl', 300)
 
-        for k, v in kwargs.items():
-            col = fields[k]
+        def dump(k):
+            s = storage(k, pipe=p)
+            s.expire(freeze_ttl)
+            return s.dump()
 
-            # if the value is empty flag the field to be deleted
-            # otherwise, we write the data.
-            if v is None:
-                rem.append(k)
-            else:
-                persist = col.to_persistence
-                _v = persist(v)
-                if _v is None:
-                    rem.append(k)
-                else:
-                    add[k] = _v
+        results = {k: dump(k) for k in ids}
 
-        redis_pk = cls.db_key(_pk)
-        backend = RedisPipelineCallbackWrapper(
-            instance=cls,
-            callback=lambda x: x,
-            pipe=pipe)
-
-        if add:
-            backend.hmset(redis_pk, add)
-
-        # apply remove to the record
-        if rem:
-            backend.hdel(redis_pk, *rem)
-
-        if pipe is None:
-            p.execute()
+        p.execute()
+        results = {k: res.data for k, res in results.items() if res.data is not None}
+        if results:
+            try:
+                cold_storage.set_multi(results)
+            except Exception:
+                p = Pipeline()
+                map(lambda k: storage(k, pipe=p).persist(), results.keys())
+                p.execute()
 
     @classmethod
-    def persist(cls, _pk, pipe=None):
-        return cls._do_command(_pk, 'persist', pipe=pipe)
+    def thaw(cls, *ids):
+        try:
+            cold_storage = getattr(cls, 'coldstorage')
+        except AttributeError:
+            raise OperationUnsupportedException()
 
-    @classmethod
-    def set_expire(cls, _pk, timeout=None, pipe=None):
-        if timeout is None:
-            timeout = default_expire_time
+        p = Pipeline()
+        storage = getattr(cls, 'storage')
+        dataset = cold_storage.get_multi(ids).items()
+        map(lambda row: storage(row[0], pipe=p).restore(row[1]), dataset)
 
-        return cls._do_command(_pk, 'expire', args=[timeout], pipe=pipe)
-
-    @classmethod
-    def clear(cls, _pk, pipe=None):
-        return cls._do_command(_pk, 'delete', pipe=pipe)
-
-    @classmethod
-    def ttl(cls, _pk, pipe=None):
-        return cls._do_command(_pk, 'ttl', pipe=pipe)
-
-    @classmethod
-    def ids(cls):
-        if rediscluster and isinstance(cls.db(), rediscluster.StrictRedisCluster):
-            conns = [redis.StrictRedis(host=node['host'], port=node['port'])
-                     for node in cls.db().connection_pool.nodes.nodes.values()
-                     if node.get('server_type', None) == 'master']
-        else:
-            conns = [cls.db()]
-        cursor = 0
-        keyspace = cls._ks()
-        redis_pattern = "%s{*}" % keyspace
-        pattern = re.compile(r'^%s\{(.*)\}$' % keyspace)
-        for conn in conns:
-            while True:
-                cursor, keys = conn.scan(
-                    cursor=cursor,
-                    match=redis_pattern,
-                    count=500)
-                for key in keys:
-                    res = pattern.match(key)
-                    if not res:
-                        continue
-                    yield res.group(1)
-                if cursor == 0:
-                    break
-
-    @classmethod
-    def _do_command(cls, _pk, command, args=None, kwargs=None, pipe=None):
-        p = Pipeline() if pipe is None else pipe
-        backend = RedisPipelineWrapper(cls, pipe=p)
-        if args is None:
-            args = ()
-        if kwargs is None:
-            kwargs = {}
-
-        response = getattr(backend, command)(cls.db_key(_pk), *args, **kwargs)
-        if pipe is None:
-            p.execute()
-            return response.data
-        return response
+        p.execute()

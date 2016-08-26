@@ -16,18 +16,18 @@ from setup_redis import (
 )
 
 
-class SampleDefinition(hbom.Definition):
-    id = hbom.StringField(primary=True, default=generate_uuid)
-    a = hbom.IntegerField()
-    b = hbom.IntegerField(default=7)
-    req = hbom.StringField(required=True)
-    created_at = hbom.FloatField(default=time.time)
+class Sample(hbom.RedisObject):
 
+    class definition(hbom.Definition):
+        id = hbom.StringField(primary=True, default=generate_uuid)
+        a = hbom.IntegerField()
+        b = hbom.IntegerField(default=7)
+        req = hbom.StringField(required=True)
+        created_at = hbom.FloatField(default=time.time)
 
-class Sample(hbom.RedisDefinitionPersistence):
-    _definition = SampleDefinition
-    _keyspace = 'TT_s'
-    _db = default_redis_connection
+    class storage(hbom.RedisHash):
+        _keyspace = 'TT_s'
+        _db = default_redis_connection
 
 
 @skip_if_redis_disabled
@@ -40,7 +40,7 @@ class TestRedisDefinitionPersistence(unittest.TestCase):
 
     def test(self):
         pipe = hbom.Pipeline()
-        x = SampleDefinition(id='x', req='test1')
+        x = Sample.definition(id='x', req='test1')
         y = Sample.new(id='y', req='test2')
         Sample.save(x, pipe=pipe)
         Sample.save(y, pipe=pipe)
@@ -76,6 +76,68 @@ class TestRedisDefinitionPersistence(unittest.TestCase):
         self.assertFalse(z.exists())
 
         pipe.execute()
+
+
+class ColdStorageMock(dict):
+
+    def set(self, k, v):
+        self[k] = v
+
+    def set_multi(self, mapping):
+        for k, v in mapping.items():
+            self.set(k, v)
+
+    def get_multi(self, keys):
+        return {k: self.get(k) for k in keys}
+
+    def delete(self, k):
+        try:
+            del self[k]
+        except KeyError:
+            pass
+
+    def delete_multi(self, keys):
+        for k in keys:
+            self.delete(k)
+
+
+class Foo(hbom.RedisObject):
+
+    class definition(hbom.Definition):
+        id = hbom.StringField(primary=True, default=generate_uuid)
+        a = hbom.IntegerField()
+        b = hbom.IntegerField(default=7)
+        created_at = hbom.FloatField(default=time.time)
+
+    class storage(hbom.RedisHash):
+        _keyspace = 'FOO'
+        _db = default_redis_connection
+
+    coldstorage = ColdStorageMock()
+
+
+class TestRedisColdStorage(unittest.TestCase):
+    def setUp(self):
+        clear_redis_testdata()
+
+    def tearDown(self):
+        clear_redis_testdata()
+
+    def test(self):
+        pipe = hbom.Pipeline()
+        x = Foo.definition(id='x', a=1)
+        y = Foo.new(id='y', a=2)
+        Foo.save(x, pipe=pipe)
+        Foo.save(y, pipe=pipe)
+        pipe.execute()
+        Foo.freeze('x', 'y')
+        data = Foo.coldstorage.get('x')
+        self.assertEqual(data, Foo.storage('x').dump())
+        self.assertAlmostEqual(Foo.storage('x').ttl(), 300, places=-1)
+        Foo.storage('x').delete()
+        x = Foo.get('x')
+        self.assertEqual(x.id, 'x')
+        self.assertEqual(x.a, 1)
 
 if __name__ == '__main__':
     unittest.main()

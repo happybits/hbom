@@ -6,11 +6,12 @@ __all__ = ['Pipeline']
 
 class Pipeline(object):
 
-    __slots__ = ['pipes', 'refs']
+    __slots__ = ['pipes', 'refs', 'callbacks']
 
     def __init__(self):
         self.pipes = {}
         self.refs = {}
+        self.callbacks = []
 
     def attach(self, model, force=False):
         """
@@ -35,6 +36,9 @@ class Pipeline(object):
             self.execute()
             return True
         return False
+
+    def on_execute(self, callback):
+        self.callbacks.append(callback)
 
     def execute(self):
         # only need to use threads if we have more than one connection
@@ -61,6 +65,11 @@ class Pipeline(object):
             for conn_id, pipe in self.pipes.items():
                 for i, result in enumerate(pipe.execute()):
                     self.refs[conn_id][i](result)
+
+        for callback in self.callbacks:
+            callback()
+
+        self.callbacks = []
 
     def allocate_callback(self, instance, callback):
         pipe, refs = self._pipe_refs(instance)
