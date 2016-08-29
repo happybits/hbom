@@ -138,6 +138,10 @@ class TestRedisColdStorage(unittest.TestCase):
         x = Foo.get('x')
         self.assertEqual(x.id, 'x')
         self.assertEqual(x.a, 1)
+        Foo.delete('x')
+        x = Foo.get('x')
+        self.assertFalse(x.exists())
+
 
 if __name__ == '__main__':
     unittest.main()

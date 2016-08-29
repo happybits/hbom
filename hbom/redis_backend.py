@@ -1418,7 +1418,11 @@ class RedisObject(object):
     @classmethod
     def delete(cls, _pk, pipe=None):
         fields = getattr(getattr(cls, 'definition'), '_fields')
-        return getattr(cls, 'storage')(_pk, pipe=pipe).hdel(*fields)
+        res = getattr(cls, 'storage')(_pk, pipe=pipe).hdel(*fields)
+        cold_storage = getattr(cls, 'coldstorage', None)
+        if cold_storage:
+            cold_storage.delete(_pk)
+        return res
 
     @classmethod
     def new(cls, **kwargs):
