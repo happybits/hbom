@@ -1462,6 +1462,7 @@ class RedisObject(object):
             rr = s.hmget(fields)
             p.execute()
             obj.load_(rr.data)
+            cold_storage.delete(_pk)
 
         p.on_execute(set_data)
 
@@ -1507,7 +1508,9 @@ class RedisObject(object):
 
         p = Pipeline()
         storage = getattr(cls, 'storage')
-        dataset = cold_storage.get_multi(ids).items()
-        map(lambda row: storage(row[0], pipe=p).restore(row[1]), dataset)
-
+        for k, v in cold_storage.get_multi(ids).items():
+            if v is None:
+                continue
+            storage(k, pipe=p).restore(v)
         p.execute()
+        cold_storage.delete_multi(ids)

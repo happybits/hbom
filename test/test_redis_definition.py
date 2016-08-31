@@ -100,6 +100,10 @@ class ColdStorageMock(dict):
         for k in keys:
             self.delete(k)
 
+    def ids(self):
+        for k in self.keys():
+            yield k
+
 
 class Foo(hbom.RedisObject):
 
@@ -134,6 +138,17 @@ class TestRedisColdStorage(unittest.TestCase):
         data = Foo.coldstorage.get('x')
         self.assertEqual(data, Foo.storage('x').dump())
         self.assertAlmostEqual(Foo.storage('x').ttl(), 300, places=-1)
+
+        Foo.thaw('x', 'y')
+        self.assertTrue(Foo.storage('x').exists())
+        self.assertTrue(Foo.storage('y').exists())
+        self.assertEqual(Foo.get('x').a, 1)
+        self.assertEqual(Foo.get('y').a, 2)
+        self.assertIsNone(Foo.coldstorage.get('x'))
+        self.assertIsNone(Foo.coldstorage.get('y'))
+
+        Foo.freeze('x', 'y')
+
         Foo.storage('x').delete()
         x = Foo.get('x')
         self.assertEqual(x.id, 'x')
@@ -141,6 +156,8 @@ class TestRedisColdStorage(unittest.TestCase):
         Foo.delete('x')
         x = Foo.get('x')
         self.assertFalse(x.exists())
+        self.assertIsNone(Foo.coldstorage.get('x'))
+        self.assertIsNotNone(Foo.coldstorage.get('y'))
 
 
 if __name__ == '__main__':
