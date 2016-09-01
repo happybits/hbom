@@ -399,7 +399,8 @@ class TestExpire(unittest.TestCase):
         res = s.expire(2)
         p.execute()
         self.assertEqual(res.data, True)
-
+        res = SampleString('foo').object('IDLETIME')
+        self.assertAlmostEqual(res, 0, places=-1)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

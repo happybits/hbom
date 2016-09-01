@@ -39,6 +39,12 @@ else
 end
 """
 
+lua_object_info = """
+local key = KEYS[1]
+local subcommand = ARGV[1]
+return redis.call('object', subcommand, key)
+"""
+
 
 def _parse_values(values):
     (_values,) = values if len(values) == 1 else (None,)
@@ -188,7 +194,7 @@ class RedisContainer(RedisConnectionMixin):
         return self._backend.persist(self.key)
 
     def object(self, subcommand):
-        return self._backend.object(subcommand, self.key)
+        return int(self.eval(lua_object_info, subcommand))
 
     @classmethod
     def ids(cls):
