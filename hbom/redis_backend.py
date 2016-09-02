@@ -194,7 +194,7 @@ class RedisContainer(RedisConnectionMixin):
         return self._backend.persist(self.key)
 
     def object(self, subcommand):
-        return int(self.eval(lua_object_info, subcommand))
+        return self.eval(lua_object_info, subcommand)
 
     @classmethod
     def ids(cls):
