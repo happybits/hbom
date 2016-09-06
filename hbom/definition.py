@@ -9,7 +9,7 @@ class DefinitionMeta(type):
     def __new__(mcs, name, bases, d):
         d['_fields'] = fields = {}
         d['_pkey'] = None
-        d['__slots__'] = {'_new', '_init', '_data', '_dirty'}
+        d['__slots__'] = {'_new', '_init', '_data', '_dirty', '_parent'}
 
         if name in ['Definition', 'RedisModel']:
             return type.__new__(mcs, name, bases, d)
@@ -74,8 +74,9 @@ class Definition(object):
         self._init = False
         self._dirty = set()
         self._data = {}
-
+        self._parent = kwargs.pop('_parent', None)
         ref = kwargs.pop('_ref', False)
+
         if ref:
             attr = getattr(self.__class__, '_pkey')
             setattr(self, attr, ref)

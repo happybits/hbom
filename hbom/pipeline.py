@@ -25,8 +25,18 @@ class Pipeline(object):
         if not force and getattr(model, '_init', False):
             return False
 
+        parent = getattr(model, '_parent', None)
+        if parent is not None:
+            parent.prepare(model, pipe=self)
+            return True
+
+        prepare = getattr(model, 'prepare', None)
+        if prepare is None:
+            return False
+
         pipe, refs = self._pipe_refs(model)
-        refs.append(model.prepare(pipe))
+        refs.append(prepare(pipe))
+
         return True
 
     def hydrate(self, models, force=False):
@@ -99,7 +109,7 @@ class Pipeline(object):
     def __getattr__(self, command):
         def fn(*args, **kwargs):
             db_args = [a for a in args]
-            if command == 'eval':
+            if command in ['eval', 'object']:
                 ref = args[2]
                 db_args[2] = ref.db_key(ref.primary_key())
             else:

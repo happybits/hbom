@@ -1439,12 +1439,26 @@ class RedisObject(object):
     @classmethod
     def get(cls, _pk, pipe=None):
         definition = getattr(cls, 'definition')
-        obj = definition(_ref=_pk)
-
+        ref = definition(_ref=_pk, _parent=cls)
         p = Pipeline() if pipe is None else pipe
+        cls.prepare(ref, pipe=p)
+        if pipe is None:
+            p.execute()
+        return ref
 
+    @classmethod
+    def ref(cls, pk, pipe=None):
+        r = getattr(cls, 'definition')(_ref=pk, _parent=cls)
+        if pipe is not None:
+            pipe.attach(r)
+        return r
+
+    @classmethod
+    def prepare(cls, ref, pipe):
+        _pk = ref.primary_key()
+        definition = ref.__class__
         fields = getattr(definition, '_fields')
-        s = getattr(cls, 'storage')(_pk, pipe=p)
+        s = getattr(cls, 'storage')(_pk, pipe=pipe)
         cold_storage = getattr(cls, 'coldstorage', None)
         if cold_storage:
             s.persist()
@@ -1452,7 +1466,7 @@ class RedisObject(object):
 
         def set_data():
             if any(v is not None for v in r.data):
-                obj.load_(r.data)
+                ref.load_(r.data)
                 return
 
             if cold_storage is None:
@@ -1467,14 +1481,10 @@ class RedisObject(object):
             s.restore(frozen)
             rr = s.hmget(fields)
             p.execute()
-            obj.load_(rr.data)
+            ref.load_(rr.data)
             cold_storage.delete(_pk)
 
-        p.on_execute(set_data)
-
-        if pipe is None:
-            p.execute()
-        return obj
+        pipe.on_execute(set_data)
 
     @classmethod
     def freeze(cls, *ids):

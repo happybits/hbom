@@ -48,16 +48,19 @@ class TestRedisDefinitionPersistence(unittest.TestCase):
 
         pipe = hbom.Pipeline()
         x = Sample.get('x', pipe=pipe)
-        y = Sample.get('y', pipe=pipe)
+        x_ref = Sample.ref('x')
+        y = Sample.ref('y', pipe=pipe)
         z = Sample.get('z', pipe=pipe)
 
         self.assertFalse(x.exists())
+        self.assertFalse(x_ref.exists())
         self.assertFalse(y.exists())
         self.assertFalse(z.exists())
-
+        pipe.attach(x_ref)
         pipe.execute()
 
         self.assertTrue(x.exists())
+        self.assertTrue(x_ref.exists())
         self.assertTrue(y.exists())
         self.assertFalse(z.exists())
 
