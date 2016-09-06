@@ -1504,16 +1504,17 @@ class RedisObject(object):
             return s.dump()
 
         results = {k: dump(k) for k in ids}
-
-        p.execute()
-        results = {k: res.data for k, res in results.items() if res.data is not None}
-        if results:
-            try:
+        try:
+            p.execute()
+            results = {k: res.data for k, res in results.items() if res.data is not None}
+            if results:
                 cold_storage.set_multi(results)
-            except Exception:
-                p = Pipeline()
-                map(lambda k: storage(k, pipe=p).persist(), results.keys())
-                p.execute()
+        except (Exception, KeyboardInterrupt, SystemExit):
+            # if anything at all goes wrong, make sure to clear the TTL on any objects
+            # we were trying to freeze
+            p = Pipeline()
+            map(lambda k: storage(k, pipe=p).persist(), ids)
+            p.execute()
 
     @classmethod
     def thaw(cls, *ids):
