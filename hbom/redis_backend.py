@@ -1527,6 +1527,8 @@ class RedisObject(object):
         for k, v in cold_storage.get_multi(ids).items():
             if v is None:
                 continue
-            storage(k, pipe=p).restore(v)
+            s = storage(k, pipe=p)
+            s.persist()
+            s.restore(v)
         p.execute()
         cold_storage.delete_multi(ids)
