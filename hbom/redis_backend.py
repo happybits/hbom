@@ -1515,6 +1515,7 @@ class RedisObject(object):
             p = Pipeline()
             map(lambda k: storage(k, pipe=p).persist(), ids)
             p.execute()
+            raise
 
     @classmethod
     def thaw(cls, *ids):
