@@ -3,6 +3,7 @@
 # std-lib
 import time
 import unittest
+import re
 
 # test harness
 from setup import generate_uuid
@@ -122,6 +123,8 @@ class Foo(hbom.RedisObject):
 
     coldstorage = ColdStorageMock()
 
+    is_hot_key = re.compile(r'^[0-9]+\.[A-Za-z0-9\-\._]+$').match
+
 
 class TestRedisColdStorage(unittest.TestCase):
     def setUp(self):
@@ -134,13 +137,20 @@ class TestRedisColdStorage(unittest.TestCase):
         pipe = hbom.Pipeline()
         x = Foo.definition(id='x', a=1)
         y = Foo.new(id='y', a=2)
+        z = Foo.new(id='0.zz', a=3)
         Foo.save(x, pipe=pipe)
         Foo.save(y, pipe=pipe)
+        Foo.save(z, pipe=pipe)
         pipe.execute()
-        Foo.freeze('x', 'y')
+        Foo.freeze('x', 'y', '0.zz')
         data = Foo.coldstorage.get('x')
         self.assertEqual(data, Foo.storage('x').dump())
         self.assertAlmostEqual(Foo.storage('x').ttl(), 300, places=-1)
+        self.assertEqual(Foo.storage('0.zz').ttl(), -1)
+        self.assertTrue(Foo.is_hot_key('0.zz'))
+
+        z = Foo.get('0.zz')
+        self.assertEqual(z.a, 3)
 
         Foo.thaw('x', 'y')
         self.assertTrue(Foo.storage('x').exists())

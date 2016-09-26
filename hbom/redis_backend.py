@@ -1454,13 +1454,26 @@ class RedisObject(object):
         return r
 
     @classmethod
+    def is_hot_key(cls, key):
+        """
+        override this method to define keys that should not ever go down
+        into cold storage.
+        Args:
+            key:
+
+        Returns:
+
+        """
+        return False
+
+    @classmethod
     def prepare(cls, ref, pipe):
         _pk = ref.primary_key()
         definition = ref.__class__
         fields = getattr(definition, '_fields')
         s = getattr(cls, 'storage')(_pk, pipe=pipe)
         cold_storage = getattr(cls, 'coldstorage', None)
-        if cold_storage:
+        if cold_storage and not cls.is_hot_key(_pk):
             s.persist()
         r = s.hmget(fields)
 
@@ -1470,6 +1483,9 @@ class RedisObject(object):
                 return
 
             if cold_storage is None:
+                return
+
+            if cls.is_hot_key(_pk):
                 return
 
             frozen = cold_storage.get(_pk)
@@ -1492,6 +1508,11 @@ class RedisObject(object):
             cold_storage = getattr(cls, 'coldstorage')
         except AttributeError:
             raise OperationUnsupportedException()
+
+        ids = [k for k in ids if not cls.is_hot_key(k)]
+
+        if not ids:
+            return 0
 
         p = Pipeline()
         storage = getattr(cls, 'storage')
@@ -1516,6 +1537,8 @@ class RedisObject(object):
             map(lambda k: storage(k, pipe=p).persist(), ids)
             p.execute()
             raise
+
+        return len(ids)
 
     @classmethod
     def thaw(cls, *ids):
