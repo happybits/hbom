@@ -65,6 +65,23 @@ class TestRedisDefinitionPersistence(unittest.TestCase):
         self.assertTrue(y.exists())
         self.assertFalse(z.exists())
 
+        x, y, z = Sample.get_multi(['x', 'y', 'z'])
+        self.assertTrue(x.exists())
+        self.assertTrue(y.exists())
+        self.assertFalse(z.exists())
+
+        pipe = hbom.Pipeline()
+        x, y, z = Sample.get_multi(['x', 'y', 'z'], pipe=pipe)
+        self.assertFalse(x.exists())
+        self.assertFalse(y.exists())
+        self.assertFalse(z.exists())
+
+        pipe.execute()
+
+        self.assertTrue(x.exists())
+        self.assertTrue(y.exists())
+        self.assertFalse(z.exists())
+
         pipe = hbom.Pipeline()
         Sample.delete('x', pipe=pipe)
         Sample.delete('y', pipe=pipe)

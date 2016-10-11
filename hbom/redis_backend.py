@@ -1447,6 +1447,23 @@ class RedisObject(object):
         return ref
 
     @classmethod
+    def get_multi(cls, _pks, pipe=None):
+        definition = getattr(cls, 'definition')
+        p = Pipeline() if pipe is None else pipe
+
+        def prep(pk):
+            ref = definition(_ref=pk, _parent=cls)
+            cls.prepare(ref, pipe=p)
+            return ref
+
+        refs = [prep(pk) for pk in _pks]
+
+        if pipe is None:
+            p.execute()
+
+        return refs
+
+    @classmethod
     def ref(cls, pk, pipe=None):
         r = getattr(cls, 'definition')(_ref=pk, _parent=cls)
         if pipe is not None:
