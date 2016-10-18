@@ -113,9 +113,9 @@ class Field(object):
         if not loading:
             self.validate(value)
             if value is not None:
-                getattr(obj, '_dirty').add(attr)
+                obj._dirty.add(attr)
 
-        getattr(obj, '_data')[attr] = value
+        obj._data[attr] = value
 
     def __set__(self, obj, value):
         initialized = getattr(obj, '_init', False)
@@ -138,10 +138,10 @@ class Field(object):
                 "Cannot convert %r into type %s" % (value, self._allowed)
             )
         self.validate(value)
-        data = getattr(obj, '_data')
+        data = obj._data
         attr = self.attr
         if data.get(attr, None) != value:
-            getattr(obj, '_dirty').add(attr)
+            obj._dirty.add(attr)
         data[attr] = value
 
     def __get__(self, obj, _):
@@ -157,8 +157,8 @@ class Field(object):
                 "%s.%s cannot be null" % (self.model, attr)
             )
         try:
-            getattr(obj, '_data').pop(attr)
-            getattr(obj, '_dirty').add(attr)
+            obj._data.pop(attr)
+            obj._dirty.add(attr)
         except KeyError:
             raise AttributeError(
                 "%s.%s does not exist" % (self.model, attr)

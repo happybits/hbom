@@ -11,7 +11,7 @@ class DefinitionMeta(type):
         d['_pkey'] = None
         d['__slots__'] = {'_new', '_init', '_data', '_dirty', '_parent'}
 
-        if name in ['Definition', 'RedisModel']:
+        if name in ['Definition']:
             return type.__new__(mcs, name, bases, d)
 
         # load all fields from any base classes to allow for validation
@@ -78,8 +78,7 @@ class Definition(object):
         ref = kwargs.pop('_ref', False)
 
         if ref:
-            attr = getattr(self.__class__, '_pkey')
-            setattr(self, attr, ref)
+            setattr(self, self.__class__._pkey, ref)
             self._new = False
             return
 
@@ -101,7 +100,7 @@ class Definition(object):
             self.__init__(_loading=True, **data)
 
     def primary_key(self):
-        return getattr(self, getattr(self.__class__, '_pkey'))
+        return getattr(self, self.__class__._pkey)
 
     def exists(self):
         return True if self._data and self._init and not self._new else False
@@ -112,14 +111,14 @@ class Definition(object):
         """
         cls = self.__class__
         data = self._data
-        pk = data.get(getattr(cls, '_pkey'))
+        pk = data.get(cls._pkey)
         if not pk:
             raise FieldError("Missing primary key value")
 
         response = {}
 
         # first figure out what data needs to be persisted
-        fields = getattr(cls, '_fields')
+        fields = cls._fields
 
         for attr in fields.keys() if full or delete else self._dirty:
             col = fields[attr]
