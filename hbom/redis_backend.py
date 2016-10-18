@@ -14,12 +14,11 @@ except ImportError:
     redis = None
 
 # internal modules
-from .definition import Definition
 from .pipeline import Pipeline
-from .exceptions import OperationUnsupportedException, FieldError
+from .exceptions import OperationUnsupportedException
 
 
-__all__ = ['RedisModel', 'RedisContainer', 'RedisList', 'RedisIndex',
+__all__ = ['RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
            'RedisDistributedHash', 'RedisObject']
 
@@ -72,7 +71,20 @@ class RedisPipelineWrapper(object):
         return self.invoker(command)
 
 
-class RedisConnectionMixin(object):
+class RedisContainer(object):
+    """
+    Base class for all containers. This class should not
+    be used and does not provide anything except the ``db``
+    member.
+    :members:
+    db can be either pipeline or redis object
+    """
+
+    def __init__(self, key, pipe=None):
+        self._key = key
+        self.pipeline = None
+        if pipe is not None:
+            self.attach(pipe)
 
     @classmethod
     def db(cls):
@@ -97,22 +109,6 @@ class RedisConnectionMixin(object):
     @classmethod
     def db_key(cls, key):
         return '%s{%s}' % (cls._ks(), key)
-
-
-class RedisContainer(RedisConnectionMixin):
-    """
-    Base class for all containers. This class should not
-    be used and does not provide anything except the ``db``
-    member.
-    :members:
-    db can be either pipeline or redis object
-    """
-
-    def __init__(self, key, pipe=None):
-        self._key = key
-        self.pipeline = None
-        if pipe is not None:
-            self.attach(pipe)
 
     def primary_key(self):
         return self._key
@@ -1235,159 +1231,6 @@ class RedisIndex(RedisHash):
 
                 if cursor == 0:
                     break
-
-
-class RedisModel(Definition, RedisConnectionMixin):
-
-    @classmethod
-    def ref(cls, primary_key, pipe=None):
-        obj = cls(_ref=primary_key)
-        if pipe is not None:
-            pipe.attach(obj)
-        return obj
-
-    def save(self, full=False, pipe=None):
-        """
-        Saves the current entity to Redis. Will only save changed data by
-        default, but you can force a full save by passing ``full=True``.
-        :param pipe:
-        :param full:
-        """
-        ret = self._apply_changes(full, pipe=pipe)
-        self.persisted_()
-        return ret
-
-    def delete(self, pipe=None):
-        """
-        Deletes the entity immediately.
-        :param pipe:
-        """
-        self._apply_changes(delete=True, pipe=pipe)
-
-    def _backend(self, pipe=None):
-        if pipe is None:
-            return self.db()
-        else:
-            return RedisPipelineWrapper(instance=self, pipe=pipe)
-
-    def _apply_changes(self, full=False, delete=False, pipe=None):
-        state = self.changes_(full=full, delete=delete)
-        if not state:
-            return 0
-
-        if pipe is None:
-            pipe = Pipeline()
-            do_commit = True
-        else:
-            do_commit = False
-
-        backend = self._backend(pipe)
-        redis_pk = self.db_key(self.primary_key())
-
-        # apply add to the record
-        add = {k: v for k, v in state.items() if v is not None}
-        if add:
-            backend.hmset(redis_pk, {k: v for k, v in state.items() if v is not None})
-
-        # apply remove to the record
-        remove = [k for k, v in state.items() if v is None]
-        if remove:
-            backend.hdel(redis_pk, *remove)
-
-        if do_commit:
-            pipe.execute()
-
-        return len(state)
-
-    def prepare(self, pipe):
-        fields = getattr(self, '_fields', None)
-        if fields is None:
-            pipe.hmgetall(self.db_key(self.primary_key()))
-        else:
-            pipe.hmget(self.db_key(self.primary_key()), *fields)
-        return lambda data: self.load_(data)
-
-    @classmethod
-    def get(cls, ids):
-        # prepare the ids
-        single = not isinstance(ids, (list, set))
-        if single:
-            ids = [ids]
-
-        # Fetch data
-        models = [cls.ref(i) for i in ids]
-        Pipeline().hydrate(models)
-        models = [model for model in models if model.exists()]
-
-        if single:
-            return models[0] if models else None
-        return models
-
-    @classmethod
-    def ids(cls):
-        if rediscluster and \
-                isinstance(cls.db(), rediscluster.StrictRedisCluster):
-            conns = [redis.StrictRedis(host=node['host'], port=node['port'])
-                     for node in cls.db().connection_pool.nodes.nodes.values()
-                     if node.get('server_type', None) == 'master']
-        else:
-            conns = [cls.db()]
-        cursor = 0
-        keyspace = cls._ks()
-        redis_pattern = "%s{*}" % keyspace
-        pattern = re.compile(r'^%s\{(.*)\}$' % keyspace)
-        for conn in conns:
-            while True:
-                cursor, keys = conn.scan(
-                    cursor=cursor,
-                    match=redis_pattern,
-                    count=500)
-                for key in keys:
-                    res = pattern.match(key)
-                    if not res:
-                        continue
-                    yield res.group(1)
-                if cursor == 0:
-                    break
-
-    @classmethod
-    def patch(cls, _pk, pipe=None, **kwargs):
-        p = Pipeline() if pipe is None else pipe
-        backend = RedisPipelineWrapper(instance=cls.ref(_pk), pipe=p)
-        redis_pk = cls.db_key(_pk)
-
-        if not _pk:
-            raise FieldError("Missing primary key value")
-
-        add = {}
-        rem = []
-
-        fields = getattr(cls, '_fields')
-
-        for k, v in kwargs.items():
-            col = fields[k]
-
-            # if the value is empty flag the field to be deleted
-            # otherwise, we write the data.
-            if v is None:
-                rem.append(k)
-            else:
-                persist = col.to_persistence
-                _v = persist(v)
-                if _v is None:
-                    rem.append(k)
-                else:
-                    add[k] = _v
-
-        if add:
-            backend.hmset(redis_pk, add)
-
-        # apply remove to the record
-        if rem:
-            backend.hdel(redis_pk, *rem)
-
-        if pipe is None:
-            p.execute()
 
 
 class RedisObject(object):

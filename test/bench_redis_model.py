@@ -14,26 +14,29 @@ def xid():
     return uuid.uuid4().get_hex()
 
 
-class Device(hbom.RedisModel):
-    _keyspace = 'D'
-    device_id = hbom.StringField(primary=True, default=xid)
-    user_id = hbom.StringField()
-    secret = hbom.StringField(required=True)
-    app_type = hbom.StringField()
-    app_version = hbom.StringField()
-    app_build = hbom.StringField()
-    platform_type = hbom.StringField()
-    platform_version = hbom.StringField()
-    flavor = hbom.StringField()
-    push_token = hbom.StringField()
-    voip_token = hbom.StringField()
-    locale = hbom.StringField()
-    timezone = hbom.StringField(default='UTC')
-    created_at = hbom.FloatField(default=time.time)
-    last_login = hbom.FloatField(default=time.time)
-    experiment = hbom.StringField()
-    cohort = hbom.StringField()
-    experiment_active = hbom.BooleanField()
+class Device(hbom.RedisObject):
+    class storage(hbom.RedisHash):
+        _keyspace = 'D'
+
+    class definition(hbom.Definition):
+        device_id = hbom.StringField(primary=True, default=xid)
+        user_id = hbom.StringField()
+        secret = hbom.StringField(required=True)
+        app_type = hbom.StringField()
+        app_version = hbom.StringField()
+        app_build = hbom.StringField()
+        platform_type = hbom.StringField()
+        platform_version = hbom.StringField()
+        flavor = hbom.StringField()
+        push_token = hbom.StringField()
+        voip_token = hbom.StringField()
+        locale = hbom.StringField()
+        timezone = hbom.StringField(default='UTC')
+        created_at = hbom.FloatField(default=time.time)
+        last_login = hbom.FloatField(default=time.time)
+        experiment = hbom.StringField()
+        cohort = hbom.StringField()
+        experiment_active = hbom.BooleanField()
 
 
 def bench(iterations=1000):
@@ -59,20 +62,19 @@ def bench(iterations=1000):
     device_ids = []
     for _ in xrange(iterations):
 
-        d = Device(**device_args)
-        d.save()
+        d = Device.new(**device_args)
+        Device.save(d)
         device_ids.append(d.device_id)
 
     for device_id in device_ids:
-        d = Device.get(device_id)
+        Device.get(device_id)
 
-    Device.get(device_ids)
+    Device.get_multi(device_ids)
 
     pipe = hbom.Pipeline()
     devices = []
     for device_id in device_ids:
-        d = Device.ref(device_id, pipe=pipe)
-        devices.append(d)
+        devices.append(Device.get(device_id, pipe=pipe))
 
     pipe.execute()
 
@@ -91,7 +93,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.profile:
         profile = line_profiler.LineProfiler(bench)
-        profile.add_module(hbom.model)
+        profile.add_module(hbom.redis_backend)
         profile.run('bench(%s)' % args.iterations)
         profile.print_stats()
     else:

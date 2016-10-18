@@ -13,17 +13,19 @@ from setup_redis import(
     clear_redis_testdata,
     TEST_DIR,
     default_redis_connection,
-    redis,
     redislite,
     skip_if_redis_disabled
 )
 
 
-class Foo(hbom.RedisModel):
-    id = hbom.StringField(primary=True, default=generate_uuid)
-    a = hbom.StringField(required=True)
-    _keyspace = 'TT_foo'
-    _db = default_redis_connection
+class Foo(hbom.RedisObject):
+    class definition(hbom.Definition):
+        id = hbom.StringField(primary=True, default=generate_uuid)
+        a = hbom.StringField(required=True)
+
+    class storage(hbom.RedisHash):
+        _keyspace = 'TT_foo'
+        _db = default_redis_connection
 
 
 class Bar(hbom.RedisSortedSet):
@@ -32,33 +34,35 @@ class Bar(hbom.RedisSortedSet):
     _db = default_redis_connection
 
 
-class Bazz(hbom.RedisModel):
-    _keyspace = 'TT_bazz'
-    id = hbom.StringField(primary=True, default=generate_uuid)
-    a = hbom.StringField()
-    _db = default_redis_connection
+class Bazz(hbom.RedisObject):
+    class storage(hbom.RedisHash):
+        _keyspace = 'TT_bazz'
+        _db = default_redis_connection
+
+    class definition(hbom.Definition):
+        id = hbom.StringField(primary=True, default=generate_uuid)
+        a = hbom.StringField()
 
 
-class Quux(hbom.RedisModel):
-    _keyspace = 'TT_quux'
-    id = hbom.StringField(primary=True, default=generate_uuid)
-    a = hbom.StringField()
-    _db = redislite.StrictRedis(
-        os.path.join(TEST_DIR, '.redis_pipe.db')) if redislite else None
+class Quux(hbom.RedisObject):
+    class storage(hbom.RedisHash):
+        _keyspace = 'TT_quux'
+        _db = redislite.StrictRedis(
+            os.path.join(TEST_DIR, '.redis_pipe.db')) if redislite else None
+
+    class definition(hbom.Definition):
+        id = hbom.StringField(primary=True, default=generate_uuid)
+        a = hbom.StringField()
 
 
-class ErrorModel(hbom.RedisModel):
-    _keyspace = 'TT_err'
-    id = hbom.StringField(primary=True, default=generate_uuid)
-    a = hbom.StringField()
-    _db = redis.StrictRedis(db=14, port=3322191) if redis else None
+class Sample(hbom.RedisObject):
+    class definition(hbom.Definition):
+        a = hbom.StringField(primary=True, required=True)
+        b = hbom.IntegerField()
 
-
-class Sample(hbom.RedisModel):
-    a = hbom.StringField(primary=True, required=True)
-    b = hbom.IntegerField()
-    _keyspace = 'TT_sample'
-    _db = default_redis_connection
+    class storage(hbom.RedisHash):
+        _keyspace = 'TT_sample'
+        _db = default_redis_connection
 
 
 @skip_if_redis_disabled
@@ -73,11 +77,11 @@ class TestPipeline(unittest.TestCase):
         pipe = hbom.Pipeline()
         i = 'abc123'
         now = int(time.time())
-        s = Sample(a=i)
+        s = Sample.new(a=i)
         s.b = now
-        s.save(pipe=pipe)
-        r = Sample.ref(i, pipe=pipe)
-        self.assertIsNone(Sample.get(i))
+        Sample.save(s, pipe=pipe)
+        r = Sample.get(i, pipe=pipe)
+        self.assertFalse(Sample.get(i).exists())
         self.assertIsNone(r.b)
         pipe.execute()
         self.assertEqual(Sample.get(i).b, now)
@@ -121,10 +125,10 @@ class TestPipeline(unittest.TestCase):
 
         ids = []
         for i in xrange(1, 5):
-            o = Foo(a='test')
+            o = Foo.new(a='test')
             o.a = o.primary_key()
             self.assertEqual(o.exists(), False)
-            o.save()
+            Foo.save(o)
             self.assertEqual(o.exists(), True)
             ids.append(o.primary_key())
 
@@ -134,13 +138,13 @@ class TestPipeline(unittest.TestCase):
         objects = []
         pipe = hbom.Pipeline()
         for i in ids:
-            o = Foo.ref(i, pipe=pipe)
+            o = Foo.get(i, pipe=pipe)
             objects.append(o)
             self.assertEqual(o.exists(), False)
 
         empty_objects = []
         for i in missing:
-            o = Foo.ref(i, pipe=pipe)
+            o = Foo.get(i, pipe=pipe)
             empty_objects.append(o)
             self.assertEqual(o.exists(), False)
 
@@ -158,17 +162,17 @@ class TestPipeline(unittest.TestCase):
         bazz_ids = []
         quux_ids = []
         for i in xrange(1, 5):
-            o = Foo(a='test')
+            o = Foo.new(a='test')
             o.a = o.primary_key()
-            o.save()
+            Foo.save(o)
             foo_ids.append(o.primary_key())
-            o = Bazz()
+            o = Bazz.new()
             o.a = o.primary_key()
-            o.save()
+            Bazz.save(o)
             bazz_ids.append(o.primary_key())
-            o = Quux()
+            o = Quux.new()
             o.a = o.primary_key()
-            o.save()
+            Quux.save(o)
             quux_ids.append(o.primary_key())
 
         objects = [Foo.ref(i) for i in foo_ids] + \
@@ -186,17 +190,17 @@ class TestPipeline(unittest.TestCase):
         bazz_ids = []
         quux_ids = []
         for i in xrange(1, 5):
-            o = Foo(a='test')
+            o = Foo.new(a='test')
             o.a = o.primary_key()
-            o.save()
+            Foo.save(o)
             foo_ids.append(o.primary_key())
-            o = Bazz()
+            o = Bazz.new()
             o.a = o.primary_key()
-            o.save()
+            Bazz.save(o)
             bazz_ids.append(o.primary_key())
-            o = Quux()
+            o = Quux.new()
             o.a = o.primary_key()
-            o.save()
+            Quux.save(o)
             quux_ids.append(o.primary_key())
 
         pipe = hbom.Pipeline()
@@ -208,61 +212,6 @@ class TestPipeline(unittest.TestCase):
         for o in objects:
             self.assertEqual(o.a, o.primary_key())
             self.assertTrue(o.exists())
-
-    def test_model_manip_by_pipe(self):
-        o = Foo(a='test')
-        o.save()
-
-        ref = Foo.ref(o.primary_key())
-
-        pipe = hbom.Pipeline()
-        data = {
-            'key1': '1',
-            'key2': '2',
-        }
-        pipe.hmset(ref, data)
-        res = pipe.hmget(ref, 'key1', 'key2')
-        self.assertEqual(res.data, None)
-        pipe.execute()
-        self.assertEqual(res.data, [data['key1'], data['key2']])
-
-        pipe = hbom.Pipeline()
-
-        pipe.delete(ref)
-
-        self.assertEqual(Foo.get(o.primary_key()).primary_key(), o.primary_key())
-        pipe.execute()
-
-        self.assertEqual(Foo.get(o.primary_key()), None)
-
-    def test_multi_thread_error(self):
-
-        foo_ids = []
-        err_ids = []
-        for i in xrange(1, 5):
-            o = Foo(a='test')
-            o.a = o.primary_key()
-            o.save()
-            foo_ids.append(o.primary_key())
-            o = ErrorModel()
-            err_ids.append(o.primary_key())
-
-        foo_objects = [Foo.ref(i) for i in foo_ids]
-        error_objects = [ErrorModel.ref(i) for i in err_ids]
-        o = foo_objects + error_objects
-
-        exception = None
-        try:
-            hbom.Pipeline().hydrate(o)
-        except Exception, e:
-            exception = e
-
-        self.assertNotEqual(exception, None)
-        for o in foo_objects:
-            self.assertEqual(o.a, o.primary_key())
-
-        for o in error_objects:
-            self.assertEqual(o.a, None)
 
 
 if __name__ == '__main__':
