@@ -51,12 +51,18 @@ class Pipeline(object):
         self.callbacks.append(callback)
 
     def execute(self):
+        callbacks = self.callbacks
+        self.callbacks = []
+        pipes = self.pipes
+        self.pipes = {}
+        refs = self.refs
+        self.refs = {}
         # only need to use threads if we have more than one connection
-        if len(self.pipes) > 1:
+        if len(pipes) > 1:
             threads = []
             # kick off all the threads
-            for conn_id, pipe in self.pipes.items():
-                t = ExecThread(pipe, self.refs[conn_id])
+            for conn_id, pipe in pipes.items():
+                t = ExecThread(pipe, refs[conn_id])
                 t.start()
                 threads.append(t)
 
@@ -72,14 +78,12 @@ class Pipeline(object):
         else:
             # only one connection, no threads needed.
             # keep it simple.
-            for conn_id, pipe in self.pipes.items():
+            for conn_id, pipe in pipes.items():
                 for i, result in enumerate(pipe.execute()):
-                    self.refs[conn_id][i](result)
+                    refs[conn_id][i](result)
 
-        for callback in self.callbacks:
+        for callback in callbacks:
             callback()
-
-        self.callbacks = []
 
     def allocate_callback(self, instance, callback):
         pipe, refs = self._pipe_refs(instance)
