@@ -10,8 +10,12 @@ except ImportError:
 
 try:
     import redis  # noqa
+    from redis.exceptions import RedisError
 except ImportError:
     redis = None
+
+    class RedisError(Exception):
+        pass
 
 # internal modules
 from .pipeline import Pipeline
@@ -683,7 +687,7 @@ class RedisSortedSet(RedisContainer):
             offset = 0
         return self.zrangebyscore(low, high, start=offset, num=limit)
 
-    def zadd(self, members, score=1):
+    def zadd(self, members, score=1, nx=False, xx=False, ch=False, incr=False):
         """
         Add members in the set and assign them the score.
 
@@ -697,14 +701,30 @@ class RedisSortedSet(RedisContainer):
         1
         > s.clear()
         """
-        _members = []
-        if not isinstance(members, dict):
-            _members = [score, members]
-        else:
-            for member, score in members.items():
-                _members += [score, member]
 
-        return self._backend.zadd(self.key, *_members)
+        if nx:
+            _args = ['NX']
+        elif xx:
+            _args = ['XX']
+        else:
+            _args = []
+
+        if ch:
+            _args.append('CH')
+
+        if incr:
+            _args.append('INCR')
+
+        if isinstance(members, dict):
+            for member, score in members.items():
+                _args += [score, member]
+        else:
+            _args += [score, members]
+
+        if nx and xx:
+            raise RedisError('cannot specify nx and xx at the same time')
+
+        return self._backend.execute_command('ZADD', self.key, *_args)
 
     def zrem(self, *values):
         """

@@ -228,6 +228,51 @@ class SortedSetTestCase(unittest.TestCase):
         self.assertEqual(["6", "3", "1"], zorted.lt(30))
         self.assertEqual(["4", "7", "2", "5"], zorted.gt(30))
 
+    def test_xx(self):
+        zorted = SortedSetModel("txx")
+        self.assertEqual(zorted.add('foo', 1, xx=True), 0)
+        self.assertEqual(zorted.zrange(0, -1), [])
+        self.assertEqual(zorted.add('foo', 1), 1)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 1.0)])
+        self.assertEqual(zorted.add('foo', 2, xx=True), 0)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 2.0)])
+        self.assertEqual(zorted.add('foo', 3, xx=True, ch=True), 1)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 3.0)])
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 3.0)])
+        self.assertEqual(zorted.add('bar', 2, xx=True, ch=True), 0)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 3.0)])
+
+    def test_nx(self):
+        zorted = SortedSetModel("tnx")
+        self.assertEqual(zorted.add('foo', 1, nx=True), 1)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 1.0)])
+        self.assertEqual(zorted.add('foo', 2, nx=True, ch=True), 0)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 1.0)])
+        self.assertEqual(zorted.add('bar', 2, nx=True, ch=True), 1)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 1.0), (b'bar', 2.0)])
+        self.assertEqual(zorted.add('bar', 3, nx=True, ch=True), 0)
+        self.assertEqual(zorted.zrange(0, -1, withscores=True),
+                         [(b'foo', 1.0), (b'bar', 2.0)])
+
+    def test_pipelined_zadd_options(self):
+        pipe = hbom.Pipeline()
+        zorted = SortedSetModel("tnx", pipe=pipe)
+        zorted.zadd('foo', 1, nx=True)
+        zorted.zadd('foo', 2, xx=True)
+        zorted.zadd('foo', 3, nx=True)
+        zorted.zadd('bar', 1, xx=True)
+        res = zorted.zrange(0, -1, withscores=True)
+        pipe.execute()
+        self.assertEqual(res.data, [(b'foo', 2.0)])
+
 
 class HashModel(hbom.RedisHash):
     _db = default_redis_connection
