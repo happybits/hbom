@@ -134,5 +134,39 @@ class TestStringListField(unittest.TestCase):
             hbom.FieldError, lambda:
             hbom.StringListField(primary=True))
 
+    def test_mutables(self):
+        class Test(hbom.Definition):
+            pk = hbom.StringField(primary=True)
+            my_list = hbom.StringListField(default=[])
+
+        t = Test(pk='1')
+        self.assertEqual(t.my_list, [])
+        self.assertEqual(t.changes_(), {'pk': '1', 'my_list': None})
+
+        my_list = t.my_list
+        t.my_list += [
+            'foo'
+        ]
+
+        t.my_list += [
+            'bar'
+        ]
+        self.assertEqual(t.my_list, ['foo', 'bar'])
+        self.assertEqual(my_list, ['foo', 'bar'])
+
+        del t
+        my_list += ['bazz']
+
+        self.assertEqual(my_list, ['foo', 'bar', 'bazz'])
+
+        t = Test(_loading=True, pk='1', my_list='foo,bar')
+        self.assertEqual(t.my_list, ['foo', 'bar'])
+        self.assertEqual(my_list, ['foo', 'bar', 'bazz'])
+
+        t = Test(pk='1')
+        self.assertEqual(t.my_list, [])
+        self.assertEqual(my_list, ['foo', 'bar', 'bazz'])
+
+
 if __name__ == '__main__':
     unittest.main()

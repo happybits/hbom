@@ -115,6 +115,9 @@ class Field(object):
             if value is not None:
                 obj._dirty.add(attr)
 
+        if isinstance(value, (dict, list)):
+            value = json.loads(json.dumps(value))
+
         obj._data[attr] = value
 
     def __set__(self, obj, value):
