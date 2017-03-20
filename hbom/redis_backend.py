@@ -1263,7 +1263,8 @@ class RedisObject(object):
         # implement the same interface.
         if getattr(instance, '_fields') != getattr(
                 getattr(cls, 'definition'), '_fields'):
-            raise Exception()
+            raise RuntimeError(
+                'incorrect instance type for %s:save' % cls.__name__)
 
         state = instance.changes_(full=full)
 
