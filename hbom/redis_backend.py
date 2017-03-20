@@ -1257,7 +1257,12 @@ class RedisObject(object):
 
     @classmethod
     def save(cls, instance, pipe=None, full=False):
-        if not isinstance(instance, getattr(cls, 'definition')):
+
+        # we can save as long as the fields match.
+        # this allows us to use wrapper classes that
+        # implement the same interface.
+        if getattr(instance, '_fields') != getattr(
+                getattr(cls, 'definition'), '_fields'):
             raise Exception()
 
         state = instance.changes_(full=full)
