@@ -24,7 +24,7 @@ from .exceptions import OperationUnsupportedException
 
 __all__ = ['RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
-           'RedisDistributedHash', 'RedisObject']
+           'RedisDistributedHash', 'RedisObject', 'RedisColdStorageObject']
 
 
 default_expire_time = 60
@@ -1294,9 +1294,6 @@ class RedisObject(object):
     def delete(cls, _pk, pipe=None):
         fields = getattr(getattr(cls, 'definition'), '_fields')
         res = getattr(cls, 'storage')(_pk, pipe=pipe).hdel(*fields)
-        cold_storage = getattr(cls, 'coldstorage', None)
-        if cold_storage:
-            cold_storage.delete(_pk)
         return res
 
     @classmethod
@@ -1307,22 +1304,25 @@ class RedisObject(object):
 
     @classmethod
     def get(cls, _pk, pipe=None):
-        definition = getattr(cls, 'definition')
-        ref = definition(_ref=_pk, _parent=cls)
-        p = Pipeline() if pipe is None else pipe
-        cls.prepare(ref, pipe=p)
-        if pipe is None:
-            p.execute()
-        return ref
+        return cls.get_multi([_pk], pipe=pipe)[0]
 
     @classmethod
     def get_multi(cls, _pks, pipe=None):
         definition = getattr(cls, 'definition')
         p = Pipeline() if pipe is None else pipe
+        storage = getattr(cls, 'storage')
+        fields = getattr(definition, '_fields')
 
         def prep(pk):
             ref = definition(_ref=pk, _parent=cls)
-            cls.prepare(ref, pipe=p)
+            s = storage(pk, pipe=p)
+            r = s.hmget(fields)
+
+            def set_data():
+                if any(v is not None for v in r.data):
+                    ref.load_(r.data)
+
+            p.on_execute(set_data)
             return ref
 
         refs = [prep(pk) for pk in _pks]
@@ -1358,6 +1358,92 @@ class RedisObject(object):
         definition = ref.__class__
         fields = getattr(definition, '_fields')
         s = getattr(cls, 'storage')(_pk, pipe=pipe)
+        r = s.hmget(fields)
+
+        def set_data():
+            if any(v is not None for v in r.data):
+                ref.load_(r.data)
+                return
+
+        pipe.on_execute(set_data)
+
+
+class RedisColdStorageObject(RedisObject):
+
+    @classmethod
+    def delete(cls, _pk, pipe=None):
+        res = super(RedisColdStorageObject, cls).delete(_pk, pipe=pipe)
+        cold_storage = getattr(cls, 'coldstorage', None)
+        if cold_storage:
+            cold_storage.delete(_pk)
+        return res
+
+    @classmethod
+    def is_hot_key(cls, key):
+        """
+        override this method to define keys that should not ever go down
+        into cold storage.
+        Args:
+            key:
+
+        Returns:
+
+        """
+        return False
+
+    @classmethod
+    def get_multi(cls, _pks, pipe=None):
+        p = Pipeline() if pipe is None else pipe
+        storage = getattr(cls, 'storage')
+        cold_storage = getattr(cls, 'coldstorage', None)
+        cold_keys = {pk for pk in _pks if cold_storage and not cls.is_hot_key(pk)}
+        for pk in cold_keys:
+            storage(pk, pipe=p).persist()
+        refs = super(RedisColdStorageObject, cls).get_multi(_pks, pipe=p)
+
+        def cb():
+            if not cold_storage:
+                return
+            missing = {r.primary_key() for r in refs if not r.exists() and
+                       r.primary_key() in cold_keys}
+            found = {k: v for k, v in cold_storage.get_multi(missing).items()
+                     if v is not None}
+            if not found:
+                return
+
+            pp = Pipeline()
+            definition = getattr(cls, 'definition')
+            fields = getattr(definition, '_fields')
+
+            def _load(k, v):
+                s = storage(k, pipe=pp)
+                s.persist()
+                s.restore(v)
+                return s.hmget(fields)
+
+            found = {k: _load(k, v) for k, v in found.items()}
+
+            pp.execute()
+            for ref in refs:
+                try:
+                    ref.load_(found[ref.primary_key()].data)
+                except KeyError:
+                    pass
+            cold_storage.delete_multi(found.keys())
+
+        p.on_execute(cb)
+
+        if pipe is None:
+            p.execute()
+
+        return refs
+
+    @classmethod
+    def prepare(cls, ref, pipe):
+        _pk = ref.primary_key()
+        definition = ref.__class__
+        fields = getattr(definition, '_fields')
+        s = getattr(cls, 'storage')(_pk, pipe=pipe)
         cold_storage = getattr(cls, 'coldstorage', None)
         if cold_storage and not cls.is_hot_key(_pk):
             s.persist()
@@ -1382,8 +1468,8 @@ class RedisObject(object):
             s = getattr(cls, 'storage')(_pk, pipe=p)
             s.restore(frozen)
             rr = s.hmget(fields)
+            p.on_execute(lambda: ref.load_(rr.data))
             p.execute()
-            ref.load_(rr.data)
             cold_storage.delete(_pk)
 
         pipe.on_execute(set_data)

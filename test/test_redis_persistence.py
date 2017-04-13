@@ -126,7 +126,7 @@ class ColdStorageMock(dict):
             yield k
 
 
-class Foo(hbom.RedisObject):
+class Foo(hbom.RedisColdStorageObject):
 
     class definition(hbom.Definition):
         id = hbom.StringField(primary=True, default=generate_uuid)
