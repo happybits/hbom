@@ -174,10 +174,10 @@ class BooleanField(Field):
 
     All standard arguments supported.
 
-    All values passed in on creation are casted via bool(), with the exception
-    of None (which behaves as though the value was missing), and any existing
-    data in persistence layer is considered ``False`` if empty, and ``True``
-    otherwise.
+    All values passed in on creation are casted via bool().
+    Originally thought we would want to distinguish between None and False
+    cases, but it actually gets messy and I think it is better as an on/off
+    switch.
 
     Used via::
 
@@ -190,6 +190,9 @@ class BooleanField(Field):
     .. note: these fields are not sortable by default.
     """
     _allowed = bool
+
+    def __init__(self):
+        super(BooleanField, self).__init__(default=False)
 
     def to_persistence(self, obj):
         return '1' if obj else None
@@ -211,6 +214,16 @@ class DecimalField(Field):
             col = Decimal()
     """
     _allowed = Decimal
+
+    def __init__(self, required=False, default=NULL):
+        """
+        don't allow as primary key.
+        rounding errors.
+        Args:
+            required:
+            default:
+        """
+        super(DecimalField, self).__init__(required=required, default=default)
 
     def from_persistence(self, value):
         return Decimal(value)
