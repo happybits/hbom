@@ -205,7 +205,7 @@ class TestMissingToSaveTestCase(unittest.TestCase):
         s.created_at = ts
         s.req = 'test'
         changes = Sample.save(s)
-        self.assertEqual(changes, 5)
+        self.assertEqual(changes, 3)
         s = Sample.get(pk)
         self.assertEqual(s.exists(), True)
         self.assertEqual(s.id, pk)

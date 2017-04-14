@@ -1266,8 +1266,6 @@ class RedisObject(object):
             raise RuntimeError(
                 'incorrect instance type for %s:save' % cls.__name__)
 
-        if not instance.exists():
-            full = True
         state = instance.changes_(full=full)
 
         if not state:
@@ -1275,15 +1273,16 @@ class RedisObject(object):
         p = Pipeline() if pipe is None else pipe
         _pk = instance.primary_key()
         s = getattr(cls, 'storage')(_pk, pipe=p)
-        # apply add to the record
-        add = {k: v for k, v in state.items() if v is not None}
-        if add:
-            s.hmset(add)
 
         # apply remove to the record
         remove = [k for k, v in state.items() if v is None]
         if remove:
             s.hdel(*remove)
+
+        # apply add to the record
+        add = {k: v for k, v in state.items() if v is not None}
+        if add:
+            s.hmset(add)
 
         p.on_execute(instance.persisted_)
 
@@ -1323,6 +1322,8 @@ class RedisObject(object):
             def set_data():
                 if any(v is not None for v in r.data):
                     ref.load_(r.data)
+                else:
+                    setattr(ref, '_new', True)
 
             p.on_execute(set_data)
             return ref
@@ -1365,7 +1366,8 @@ class RedisObject(object):
         def set_data():
             if any(v is not None for v in r.data):
                 ref.load_(r.data)
-                return
+            else:
+                setattr(ref, '_new', True)
 
         pipe.on_execute(set_data)
 
@@ -1430,7 +1432,7 @@ class RedisColdStorageObject(RedisObject):
                 try:
                     ref.load_(found[ref.primary_key()].data)
                 except KeyError:
-                    pass
+                    setattr(ref, '_new', True)
             cold_storage.delete_multi(found.keys())
 
         p.on_execute(cb)

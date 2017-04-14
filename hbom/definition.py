@@ -120,17 +120,24 @@ class Definition(object):
         # first figure out what data needs to be persisted
         fields = cls._fields
 
-        for attr in fields.keys() if full or delete else self._dirty:
+        for attr in fields.keys():
             col = fields[attr]
 
             # get old and new values for this field
             nv = data.get(attr)
 
-            if col.required and nv is None:
-                raise MissingField(
-                    "%s.%s cannot be missing" % (cls.__name__, attr)
-                )
-            col.validate(nv)
+            if not delete:
+                # don't allow save if missing a required field
+                if col.required and nv is None:
+                    raise MissingField(
+                        "%s.%s cannot be missing" % (cls.__name__, attr)
+                    )
+                col.validate(nv)
+
+            # if the field is not dirty, no need to include in change set
+            # unless we are deleting the record or passed the full flag.
+            if not full and not delete and attr not in self._dirty:
+                continue
 
             # if the new value is empty, just flag the field to be deleted
             # otherwise, we write the data.
