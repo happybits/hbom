@@ -27,7 +27,8 @@ __all__ = ['RedisContainer', 'RedisList', 'RedisIndex',
            'RedisDistributedHash', 'RedisObject', 'RedisColdStorageObject']
 
 
-default_expire_time = 60
+EXPIRE_DEFAULT = 60
+FREEZE_TTL_DEFAULT = 300
 
 lua_restorenx = """
 local key = KEYS[1]
@@ -169,7 +170,7 @@ class RedisContainer(object):
         :rtype: None
         """
         if time is None:
-            time = default_expire_time
+            time = EXPIRE_DEFAULT
 
         return self._backend.expire(self.key, time)
 
@@ -1377,9 +1378,9 @@ class RedisColdStorageObject(RedisObject):
     @classmethod
     def delete(cls, _pk, pipe=None):
         res = super(RedisColdStorageObject, cls).delete(_pk, pipe=pipe)
-        cold_storage = getattr(cls, 'coldstorage', None)
-        if cold_storage:
-            cold_storage.delete(_pk)
+        # can we get away with not deleting from cold storage on hot key?
+        cold_storage = getattr(cls, 'coldstorage')
+        cold_storage.delete(_pk)
         return res
 
     @classmethod
@@ -1399,25 +1400,30 @@ class RedisColdStorageObject(RedisObject):
     def get_multi(cls, _pks, pipe=None):
         p = Pipeline() if pipe is None else pipe
         storage = getattr(cls, 'storage')
-        cold_storage = getattr(cls, 'coldstorage', None)
-        cold_keys = {pk for pk in _pks if cold_storage and not cls.is_hot_key(pk)}
+        cold_storage = getattr(cls, 'coldstorage')
+        cold_keys = {pk for pk in _pks if not cls.is_hot_key(pk)}
+        missing_cache = {}
         for pk in cold_keys:
-            storage(pk, pipe=p).persist()
+            s = storage(pk, pipe=p)
+            s.persist()
+            missing_cache[pk] = s.pipeline.exists("%s__xx" % s.key)
+
         refs = super(RedisColdStorageObject, cls).get_multi(_pks, pipe=p)
 
         def cb():
-            if not cold_storage:
-                return
+            for pk, ref in missing_cache.items():
+                if ref.data:
+                    cold_keys.remove(pk)
+
             missing = {r.primary_key() for r in refs if not r.exists() and
                        r.primary_key() in cold_keys}
             found = {k: v for k, v in cold_storage.get_multi(missing).items()
                      if v is not None}
-            if not found:
-                return
 
             pp = Pipeline()
             definition = getattr(cls, 'definition')
             fields = getattr(definition, '_fields')
+            freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
 
             def _load(k, v):
                 s = storage(k, pipe=pp)
@@ -1425,10 +1431,21 @@ class RedisColdStorageObject(RedisObject):
                 s.restore(v)
                 return s.hmget(fields)
 
+            def _no_load(k):
+                s = storage(k, pipe=pp)
+                s.pipeline.set('%s__xx' % s.key, '1')
+                s.pipeline.expire('%s__xx' % s.key, freeze_ttl - 1)
+
             found = {k: _load(k, v) for k, v in found.items()}
+            for k in missing:
+                if k in found:
+                    continue
+                _no_load(k)
 
             pp.execute()
             for ref in refs:
+                if ref.primary_key() not in missing:
+                    continue
                 try:
                     ref.load_(found[ref.primary_key()].data)
                 except KeyError:
@@ -1448,9 +1465,12 @@ class RedisColdStorageObject(RedisObject):
         definition = ref.__class__
         fields = getattr(definition, '_fields')
         s = getattr(cls, 'storage')(_pk, pipe=pipe)
-        cold_storage = getattr(cls, 'coldstorage', None)
-        if cold_storage and not cls.is_hot_key(_pk):
+        cold_storage = getattr(cls, 'coldstorage')
+        missing_cache = False
+        frozen_key_cache = "%s__xx" % s.key
+        if not cls.is_hot_key(_pk):
             s.persist()
+            missing_cache = s.pipeline.exists(frozen_key_cache)
         r = s.hmget(fields)
 
         def set_data():
@@ -1458,18 +1478,24 @@ class RedisColdStorageObject(RedisObject):
                 ref.load_(r.data)
                 return
 
-            if cold_storage is None:
-                return
-
             if cls.is_hot_key(_pk):
                 return
 
-            frozen = cold_storage.get(_pk)
-            if frozen is None:
+            if missing_cache and missing_cache.data:
                 return
+
+            frozen = cold_storage.get(_pk)
 
             p = Pipeline()
             s = getattr(cls, 'storage')(_pk, pipe=p)
+
+            if frozen is None:
+                freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
+                s.pipeline.set(frozen_key_cache, '1')
+                s.pipeline.expire(frozen_key_cache, freeze_ttl - 1)
+                p.execute()
+                return
+
             s.restore(frozen)
             rr = s.hmget(fields)
             p.on_execute(lambda: ref.load_(rr.data))
@@ -1480,10 +1506,7 @@ class RedisColdStorageObject(RedisObject):
 
     @classmethod
     def freeze(cls, *ids):
-        try:
-            cold_storage = getattr(cls, 'coldstorage')
-        except AttributeError:
-            raise OperationUnsupportedException()
+        cold_storage = getattr(cls, 'coldstorage')
 
         ids = [k for k in ids if not cls.is_hot_key(k)]
 
@@ -1493,7 +1516,7 @@ class RedisColdStorageObject(RedisObject):
         p = Pipeline()
         storage = getattr(cls, 'storage')
 
-        freeze_ttl = getattr(cls, 'freeze_ttl', 300)
+        freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
 
         def dump(k):
             s = storage(k, pipe=p)
@@ -1518,11 +1541,7 @@ class RedisColdStorageObject(RedisObject):
 
     @classmethod
     def thaw(cls, *ids):
-        try:
-            cold_storage = getattr(cls, 'coldstorage')
-        except AttributeError:
-            raise OperationUnsupportedException()
-
+        cold_storage = getattr(cls, 'coldstorage')
         p = Pipeline()
         storage = getattr(cls, 'storage')
         for k, v in cold_storage.get_multi(ids).items():
