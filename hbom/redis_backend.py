@@ -1444,7 +1444,7 @@ class RedisColdStorageObject(RedisObject):
 
             pp.execute()
             for ref in refs:
-                if ref.primary_key() not in missing:
+                if ref.exists() or ref.primary_key() not in missing:
                     continue
                 try:
                     ref.load_(found[ref.primary_key()].data)
@@ -1503,6 +1503,19 @@ class RedisColdStorageObject(RedisObject):
             cold_storage.delete(_pk)
 
         pipe.on_execute(set_data)
+
+    @classmethod
+    def save(cls, instance, pipe=None, full=False):
+        p = Pipeline() if pipe is None else pipe
+        res = super(RedisColdStorageObject, cls).save(instance, pipe=p, full=full)
+        if res != 0:
+            storage = getattr(cls, 'storage')
+            s = storage(instance.primary_key(), pipe=p)
+            s.pipeline.delete('%s__xx' % s.key)
+
+        if pipe is None:
+            p.execute()
+        return res
 
     @classmethod
     def freeze(cls, *ids):

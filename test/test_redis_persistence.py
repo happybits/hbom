@@ -203,6 +203,7 @@ class TestRedisColdStorage(unittest.TestCase):
         b = Foo.new(id='b')
         Foo.save(b)
         b = Foo.get('b')
+        self.assertIsNone(default_redis_connection.get('FOO{b}__xx'))
         self.assertTrue(b.exists())
         self.assertIsNone(default_redis_connection.get('FOO{b}__xx'))
 
@@ -212,6 +213,20 @@ class TestRedisColdStorage(unittest.TestCase):
         hbom.Pipeline().hydrate([c])
         self.assertTrue(c.exists())
         self.assertIsNone(default_redis_connection.get('FOO{c}__xx'))
+
+    def test_missing_to_save_freeze(self):
+        a = Foo.get('a')
+        self.assertFalse(a.exists())
+        self.assertEqual(default_redis_connection.get('FOO{a}__xx'), '1')
+        Foo.save(a)
+        Foo.freeze('a')
+        res = Foo.storage('a').ttl()
+        self.assertAlmostEqual(res, hbom.redis_backend.FREEZE_TTL_DEFAULT, delta=1)
+        Foo.storage('a').delete()
+        res = Foo.storage('a').hgetall()
+        self.assertEqual(res, {})
+        a = Foo.get('a')
+        self.assertTrue(a.exists())
 
 
 class TestMissingToSaveTestCase(unittest.TestCase):
