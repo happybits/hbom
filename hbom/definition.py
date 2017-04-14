@@ -1,5 +1,5 @@
 import json
-from .exceptions import FieldError
+from .exceptions import FieldError, MissingField
 from .fields import Field
 
 __all__ = ['Definition']
@@ -125,6 +125,12 @@ class Definition(object):
 
             # get old and new values for this field
             nv = data.get(attr)
+
+            if col.required and nv is None:
+                raise MissingField(
+                    "%s.%s cannot be missing" % (cls.__name__, attr)
+                )
+            col.validate(nv)
 
             # if the new value is empty, just flag the field to be deleted
             # otherwise, we write the data.

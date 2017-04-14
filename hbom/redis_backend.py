@@ -1266,6 +1266,8 @@ class RedisObject(object):
             raise RuntimeError(
                 'incorrect instance type for %s:save' % cls.__name__)
 
+        if not instance.exists():
+            full = True
         state = instance.changes_(full=full)
 
         if not state:

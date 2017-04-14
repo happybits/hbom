@@ -190,5 +190,35 @@ class TestRedisColdStorage(unittest.TestCase):
         self.assertIsNotNone(Foo.coldstorage.get('y'))
 
 
+class TestMissingToSaveTestCase(unittest.TestCase):
+    def setUp(self):
+        clear_redis_testdata()
+
+    def tearDown(self):
+        clear_redis_testdata()
+
+    def test_main(self):
+        pk = generate_uuid()
+        s = Sample.get(pk)
+        self.assertEqual(s.exists(), False)
+        ts = time.time()
+        s.created_at = ts
+        s.req = 'test'
+        changes = Sample.save(s)
+        self.assertEqual(changes, 5)
+        s = Sample.get(pk)
+        self.assertEqual(s.exists(), True)
+        self.assertEqual(s.id, pk)
+        self.assertEqual(s.req, 'test')
+        self.assertEqual(s.created_at, ts)
+
+    def test_required(self):
+        pk = generate_uuid()
+        s = Sample.get(pk)
+        self.assertEqual(s.exists(), False)
+        ts = time.time()
+        s.created_at = ts
+        self.assertRaises(hbom.MissingField, lambda: Sample.save(s))
+
 if __name__ == '__main__':
     unittest.main()
