@@ -960,6 +960,13 @@ class RedisSortedSet(RedisContainer):
         """
         return self._backend.zrank(self.key, elem)
 
+    def zcount(self, min, max):
+        """
+        Returns the number of elements in the sorted set at key ``name`` with
+        a score between ``min`` and ``max``.
+        """
+        return self._backend.zcount(self.key, min, max)
+
     def eq(self, value):
         """
         Returns the elements that have ``value`` for score.
