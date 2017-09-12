@@ -95,14 +95,14 @@ class TestPipeline(unittest.TestCase):
         write_response = ref.zadd('a', now)
         read_response = ref.zrange(0, -1, withscores=True)
 
-        self.assertEqual(write_response.data, None)
+        self.assertEqual(write_response, None)
 
-        self.assertEqual(read_response.data, None)
+        self.assertEqual(read_response, None)
 
         pipe.execute()
 
-        self.assertEqual(write_response.data, 1)
-        self.assertEqual(read_response.data, [('a', now)])
+        self.assertEqual(write_response, 1)
+        self.assertEqual(read_response, [('a', now)])
 
     def test_container_manip_by_pipe(self):
         pipe = hbom.Pipeline()
@@ -112,14 +112,14 @@ class TestPipeline(unittest.TestCase):
         write_response = pipe.zadd(ref, now, 'a')
         read_response = pipe.zrange(ref, 0, -1, withscores=True)
 
-        self.assertEqual(write_response.data, None)
+        self.assertEqual(write_response, None)
 
-        self.assertEqual(read_response.data, None)
+        self.assertEqual(read_response, None)
 
         pipe.execute()
 
-        self.assertEqual(write_response.data, 1)
-        self.assertEqual(read_response.data, [('a', now)])
+        self.assertEqual(write_response, 1)
+        self.assertEqual(read_response, [('a', now)])
 
     def test_model_multi(self):
 

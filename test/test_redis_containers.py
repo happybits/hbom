@@ -271,7 +271,7 @@ class SortedSetTestCase(unittest.TestCase):
         zorted.zadd('bar', 1, xx=True)
         res = zorted.zrange(0, -1, withscores=True)
         pipe.execute()
-        self.assertEqual(res.data, [(b'foo', 2.0)])
+        self.assertEqual(res, [(b'foo', 2.0)])
 
 
 class HashModel(hbom.RedisHash):
