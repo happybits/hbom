@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import json
-from setup import hbom, generate_uuid
+from unit_test_setup import hbom, generate_uuid
 import unittest
 
 

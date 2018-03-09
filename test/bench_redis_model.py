@@ -6,7 +6,7 @@ import time
 import line_profiler
 
 # test harness
-from setup import Timer
+from unit_test_setup import Timer
 from setup_redis import hbom
 
 

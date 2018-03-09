@@ -6,7 +6,7 @@ import unittest
 import os
 
 # test harness
-from setup import generate_uuid
+from unit_test_setup import generate_uuid
 
 # test-harness
 from setup_redis import (
@@ -29,7 +29,7 @@ class TTSave(hbom.RedisObject):
 
     class storage(hbom.RedisHash):
         _keyspace = 'TT_s'
-        _db = default_redis_connection
+        _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -65,7 +65,7 @@ class Demo(hbom.RedisObject):
 
     class storage(hbom.RedisHash):
         _keyspace = 'TT_idTest'
-        _db = default_redis_connection
+        _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -94,7 +94,7 @@ class SampleModel(hbom.RedisObject):
         req = hbom.StringField(required=True)
 
     class storage(hbom.RedisHash):
-        _db = default_redis_connection
+        _db = 'test'
         _keyspace = 'SampleModel'
 
 
@@ -139,32 +139,6 @@ class TestRead(unittest.TestCase):
         ids = self.initialize(ct=5)
         res = [x.id for x in SampleModel.get_multi(ids) if x.exists()]
         self.assertEqual(res, ids)
-
-
-class TTFoo(hbom.RedisObject):
-    class definition(hbom.Definition):
-        id = hbom.StringField(primary=True, default=generate_uuid)
-
-    class storage(hbom.RedisHash):
-        _db = default_redis_connection
-        _keyspace = 'TTFoo'
-
-
-class TTBar(hbom.RedisObject):
-    class definition(hbom.Definition):
-        id = hbom.StringField(primary=True, default=generate_uuid)
-
-    class storage(hbom.RedisHash):
-        _db = redislite.StrictRedis(
-            os.path.join(TEST_DIR, '.redis_alt.db')) if redislite else None
-        _keyspace = 'TTBar'
-
-
-@skip_if_redis_disabled
-class TestConnections(unittest.TestCase):
-    def test_connections(self):
-        self.assertEqual(TTFoo.storage.db(), default_redis_connection)
-        self.assertNotEqual(TTBar.storage.db(), default_redis_connection)
 
 
 if __name__ == '__main__':

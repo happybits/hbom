@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import unittest
-from setup import hbom
+from unit_test_setup import hbom
 
 
 class TestField(unittest.TestCase):

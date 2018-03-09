@@ -1,6 +1,7 @@
 # std-lib
 import hashlib
 import re
+import redpipe
 
 # 3rd-party (optional)
 try:
@@ -21,11 +22,9 @@ except ImportError:
 from .pipeline import Pipeline
 from .exceptions import OperationUnsupportedException
 
-
 __all__ = ['RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
            'RedisDistributedHash', 'RedisObject', 'RedisColdStorageObject']
-
 
 EXPIRE_DEFAULT = 60
 FREEZE_TTL_DEFAULT = 300
@@ -57,25 +56,6 @@ def _parse_values(values):
     return values
 
 
-class RedisPipelineWrapper(object):
-    __slots__ = ['invoker']
-
-    def __init__(self, instance, pipe):
-        allocator = pipe.allocate_response
-
-        def invoker(command):
-            def fn(*args, **kwargs):
-                r, p = allocator(instance)
-                getattr(p, command)(*args, **kwargs)
-                return r
-            return fn
-
-        self.invoker = invoker
-
-    def __getattr__(self, command):
-        return self.invoker(command)
-
-
 class RedisContainer(object):
     """
     Base class for all containers. This class should not
@@ -85,23 +65,21 @@ class RedisContainer(object):
     db can be either pipeline or redis object
     """
 
+    _db = None
+
     def __init__(self, key, pipe=None):
         self._key = key
-        self.pipeline = None
-        if pipe is not None:
-            self.attach(pipe)
+        self.key = self.db_key(self._key)
+        self._pipe = pipe
 
-    @classmethod
-    def db(cls):
-        db = getattr(cls, '_db', None)
-        if db is None:
-            raise RuntimeError('no db object set on %s' % cls.__name__)
-        else:
-            return db
+    @property
+    def pipe(self):
+        """
+        Get a fresh pipeline() to be used in a `with` block.
 
-    @classmethod
-    def db_pipeline(cls):
-        return cls.db().pipeline(transaction=False)
+        :return: Pipeline or NestedPipeline with autoexec set to true.
+        """
+        return redpipe.pipeline(self._pipe, name=self._db, autoexec=True)
 
     @classmethod
     def _ks(cls):
@@ -118,23 +96,6 @@ class RedisContainer(object):
     def primary_key(self):
         return self._key
 
-    def attach(self, pipe):
-        self.pipeline = RedisPipelineWrapper(instance=self, pipe=pipe)
-
-    def detach(self):
-        self.pipeline = None
-
-    @property
-    def key(self):
-        return self.db_key(self._key)
-
-    @property
-    def _backend(self):
-        if self.pipeline is None:
-            return self.db()
-        else:
-            return self.pipeline
-
     def delete(self):
         """
         Remove the container from the redis storage
@@ -146,7 +107,8 @@ class RedisContainer(object):
         set([])
 
         """
-        return self._backend.delete(self.key)
+        with self.pipe as p:
+            return p.delete(self.key)
 
     clear = delete
 
@@ -171,62 +133,92 @@ class RedisContainer(object):
         """
         if time is None:
             time = EXPIRE_DEFAULT
-
-        return self._backend.expire(self.key, time)
+        with self.pipe as p:
+            return p.expire(self.key, time)
 
     set_expire = expire
 
     def exists(self):
-        return self._backend.exists(self.key)
+        with self.pipe as p:
+            return p.exists(self.key)
 
     def eval(self, script, *args):
-        return self._backend.eval(script, 1, self.key, *args)
+        with self.pipe as p:
+            return p.eval(script, 1, self.key, *args)
 
     def dump(self):
-        return self._backend.dump(self.key)
+        with self.pipe as p:
+            return p.dump(self.key)
 
     def restore(self, data, pttl=0):
         return self.eval(lua_restorenx, pttl, data)
 
     def ttl(self):
-        return self._backend.ttl(self.key)
+        with self.pipe as p:
+            return p.ttl(self.key)
 
     def persist(self):
-        return self._backend.persist(self.key)
+        with self.pipe as p:
+            return p.persist(self.key)
 
     def object(self, subcommand):
         return self.eval(lua_object_info, subcommand)
 
     @classmethod
-    def ids(cls):
-        if rediscluster and isinstance(cls.db(),
-                                       rediscluster.StrictRedisCluster):
-            conns = [
-                redis.StrictRedis(host=node['host'], port=node['port'])
-                for node in cls.db().connection_pool.nodes.nodes.values()
-                if node.get('server_type', None) == 'master']
-        elif redis:
-            conns = [cls.db()]
-        else:
-            raise RuntimeError('redis package not imported')
+    def scan(cls, cursor=0, match=None, count=None):
+        """
+        Incrementally return lists of key names. Also return a cursor
+        indicating the scan position.
 
-        cursor = 0
-        keyspace = cls._ks()
-        redis_pattern = "%s{*}" % keyspace
-        pattern = re.compile(r'^%s\{(.*)\}$' % keyspace)
-        for conn in conns:
-            while True:
-                cursor, keys = conn.scan(
-                    cursor=cursor,
-                    match=redis_pattern,
-                    count=500)
-                for key in keys:
-                    res = pattern.match(key)
-                    if not res:
-                        continue
-                    yield res.group(1)
-                if cursor == 0:
-                    break
+        ``match`` allows for filtering the keys by pattern
+
+        ``count`` allows for hint the minimum number of returns
+        """
+        f = redpipe.Future()
+
+        if match is None:
+            match = '*'
+        match = "%s{%s}" % (cls._ks(), match)
+        pattern = re.compile(r'^%s{(.*)}$' % cls._ks())
+
+        with redpipe.pipeline(name=cls._db, autoexec=True) as pipe:
+
+            res = pipe.scan(cursor=cursor, match=match, count=count)
+            decode = redpipe.TextField.decode
+
+            def cb():
+                keys = []
+                for k in res[1]:
+                    k = decode(k)
+                    m = pattern.match(k)
+                    if m:
+                        keys.append(m.group(1))
+
+                f.set((res[0], keys))
+
+            pipe.on_execute(cb)
+            return f
+
+    @classmethod
+    def scan_iter(cls, match=None, count=None):
+        """
+        Make an iterator using the SCAN command so that the client doesn't
+        need to remember the cursor position.
+
+        ``match`` allows for filtering the keys by pattern
+
+        ``count`` allows for hint the minimum number of returns
+        """
+        cursor = '0'
+        while cursor != 0:
+            cursor, data = cls.scan(cursor=cursor, match=match, count=count)
+            for item in data:
+                yield item
+
+    @classmethod
+    def ids(cls):
+        for item in cls.scan_iter(count=100):
+            yield item
 
 
 class RedisString(RedisContainer):
@@ -237,20 +229,23 @@ class RedisString(RedisContainer):
         """
         set the value as a string in the key
         """
-        return self._backend.get(self.key)
+        with self.pipe as p:
+            return p.get(self.key)
 
     def set(self, value):
         """
         set the value as a string in the key
         :param value:
         """
-        return self._backend.set(self.key, value)
+        with self.pipe as p:
+            return p.set(self.key, value)
 
     def incr(self):
         """
         increment the value for key by 1
         """
-        return self._backend.incr(self.key)
+        with self.pipe as p:
+            return p.incr(self.key)
 
     def incrby(self, value=1):
         """
@@ -264,7 +259,8 @@ class RedisString(RedisContainer):
         increment the value for key by value: float
         :param value:
         """
-        return self._backend.incrbyfloat(self.key, value)
+        with self.pipe as p:
+            return p.incrbyfloat(self.key, value)
 
     def setnx(self, value):
         """
@@ -272,7 +268,8 @@ class RedisString(RedisContainer):
         :param value:
         :return:
         """
-        return self._backend.setnx(self.key, value)
+        with self.pipe as p:
+            return p.setnx(self.key, value)
 
 
 class RedisSet(RedisContainer):
@@ -303,7 +300,8 @@ class RedisSet(RedisContainer):
         > s.clear()
 
         """
-        return self._backend.sadd(self.key, *_parse_values(values))
+        with self.pipe as p:
+            return p.sadd(self.key, *_parse_values(values))
 
     def srem(self, *values):
         """
@@ -320,7 +318,8 @@ class RedisSet(RedisContainer):
         > s.clear()
 
         """
-        return self._backend.srem(self.key, *_parse_values(values))
+        with self.pipe as p:
+            return p.srem(self.key, *_parse_values(values))
 
     def spop(self):
         """
@@ -337,10 +336,12 @@ class RedisSet(RedisContainer):
         set([])
 
         """
-        return self._backend.spop(self.key)
+        with self.pipe as p:
+            return p.spop(self.key)
 
     def all(self):
-        return self._backend.smembers(self.key)
+        with self.pipe as p:
+            return p.smembers(self.key)
 
     members = property(all)
 
@@ -351,7 +352,8 @@ class RedisSet(RedisContainer):
         :rtype: String containing the cardinality.
 
         """
-        return self._backend.scard(self.key)
+        with self.pipe as p:
+            return p.scard(self.key)
 
     def sismember(self, value):
         """
@@ -359,7 +361,8 @@ class RedisSet(RedisContainer):
         :param value:
 
         """
-        return self._backend.sismember(self.key, value)
+        with self.pipe as p:
+            return p.sismember(self.key, value)
 
     def srandmember(self):
         """
@@ -372,7 +375,8 @@ class RedisSet(RedisContainer):
         '...'
         > # 'a', 'b' or 'c'
         """
-        return self._backend.srandmember(self.key)
+        with self.pipe as p:
+            return p.srandmember(self.key)
 
     add = sadd
     pop = spop
@@ -397,7 +401,8 @@ class RedisList(RedisContainer):
         """
         Returns the length of the list.
         """
-        return self._backend.llen(self.key)
+        with self.pipe as p:
+            return p.llen(self.key)
 
     def lrange(self, start, stop):
         """
@@ -414,7 +419,8 @@ class RedisList(RedisContainer):
         > l.clear()
 
         """
-        return self._backend.lrange(self.key, start, stop)
+        with self.pipe as p:
+            return p.lrange(self.key, start, stop)
 
     def lpush(self, *values):
         """
@@ -428,7 +434,8 @@ class RedisList(RedisContainer):
         2L
         > l.clear()
         """
-        return self._backend.lpush(self.key, *_parse_values(values))
+        with self.pipe as p:
+            return p.lpush(self.key, *_parse_values(values))
 
     def rpush(self, *values):
         """
@@ -446,7 +453,8 @@ class RedisList(RedisContainer):
         ['b', 'a', 'c', 'd']
         > l.clear()
         """
-        return self._backend.rpush(self.key, *_parse_values(values))
+        with self.pipe as p:
+            return p.rpush(self.key, *_parse_values(values))
 
     def extend(self, iterable):
         """
@@ -471,7 +479,8 @@ class RedisList(RedisContainer):
         :return: the popped value.
 
         """
-        return self._backend.lpop(self.key)
+        with self.pipe as p:
+            return p.lpop(self.key)
 
     def rpop(self):
         """
@@ -479,7 +488,8 @@ class RedisList(RedisContainer):
 
         :return: the popped value.
         """
-        return self._backend.rpop(self.key)
+        with self.pipe as p:
+            return p.rpop(self.key)
 
     def rpoplpush(self, key):
         """
@@ -500,7 +510,8 @@ class RedisList(RedisContainer):
         > l.clear()
         > l2.clear()
         """
-        return self._backend.rpoplpush(self.key, key)
+        with self.pipe as p:
+            return p.rpoplpush(self.key, key)
 
     def lrem(self, value, num=1):
         """
@@ -510,7 +521,8 @@ class RedisList(RedisContainer):
         :return: 1 if the value has been removed, 0 otherwise
         if you see an error here, did you use redis.StrictRedis()?
         """
-        return self._backend.lrem(self.key, num, value)
+        with self.pipe as p:
+            return p.lrem(self.key, num, value)
 
     def reverse(self):
         """
@@ -531,7 +543,8 @@ class RedisList(RedisContainer):
         :param end:
         :return: None
         """
-        return self._backend.ltrim(self.key, start, end)
+        with self.pipe as p:
+            return p.ltrim(self.key, start, end)
 
     def lindex(self, idx):
         """
@@ -540,7 +553,8 @@ class RedisList(RedisContainer):
         :param idx: the index to fetch the value.
         :return: the value or None if out of range.
         """
-        return self._backend.lindex(self.key, idx)
+        with self.pipe as p:
+            return p.lindex(self.key, idx)
 
     def lset(self, idx, value=0):
         """
@@ -560,7 +574,8 @@ class RedisList(RedisContainer):
         > l.clear()
 
         """
-        return self._backend.lset(self.key, idx, value)
+        with self.pipe as p:
+            return p.lset(self.key, idx, value)
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
@@ -582,6 +597,7 @@ class RedisSortedSet(RedisContainer):
     Use it if you want to arrange your set in any order.
 
     """
+
     @property
     def members(self):
         """
@@ -724,8 +740,8 @@ class RedisSortedSet(RedisContainer):
 
         if nx and xx:
             raise RedisError('cannot specify nx and xx at the same time')
-
-        return self._backend.execute_command('ZADD', self.key, *_args)
+        with self.pipe as p:
+            return p.execute_command('ZADD', self.key, *_args)
 
     def zrem(self, *values):
         """
@@ -744,7 +760,8 @@ class RedisSortedSet(RedisContainer):
         []
         > s.clear()
         """
-        return self._backend.zrem(self.key, *_parse_values(values))
+        with self.pipe as p:
+            return p.zrem(self.key, *_parse_values(values))
 
     def zincrby(self, att, value=1):
         """
@@ -761,7 +778,8 @@ class RedisSortedSet(RedisContainer):
         20.0
         > s.clear()
         """
-        return self._backend.zincrby(self.key, att, value)
+        with self.pipe as p:
+            return p.zincrby(self.key, att, value)
 
     def zrevrank(self, member):
         """
@@ -777,7 +795,8 @@ class RedisSortedSet(RedisContainer):
         > s.clear()
         :param member:
         """
-        return self._backend.zrevrank(self.key, member)
+        with self.pipe as p:
+            return p.zrevrank(self.key, member)
 
     def zrange(self, start, end, **kwargs):
         """
@@ -800,7 +819,8 @@ class RedisSortedSet(RedisContainer):
         [('b', 20.0), ('c', 30.0)]
         > s.clear()
         """
-        return self._backend.zrange(self.key, start, end, **kwargs)
+        with self.pipe as p:
+            return p.zrange(self.key, start, end, **kwargs)
 
     def zrevrange(self, start, end, **kwargs):
         """
@@ -823,7 +843,8 @@ class RedisSortedSet(RedisContainer):
         :param start:
         :param start:
         """
-        return self._backend.zrevrange(self.key, start, end, **kwargs)
+        with self.pipe as p:
+            return p.zrevrange(self.key, start, end, **kwargs)
 
     # noinspection PyShadowingBuiltins
     def zrangebyscore(self, min, max, **kwargs):
@@ -844,7 +865,8 @@ class RedisSortedSet(RedisContainer):
         :param max: int
         :param kwargs: dict
         """
-        return self._backend.zrangebyscore(self.key, min, max, **kwargs)
+        with self.pipe as p:
+            return p.zrangebyscore(self.key, min, max, **kwargs)
 
     # noinspection PyShadowingBuiltins
     def zrevrangebyscore(self, max, min, **kwargs):
@@ -865,7 +887,8 @@ class RedisSortedSet(RedisContainer):
         :param min:
         :param max:
         """
-        return self._backend.zrevrangebyscore(self.key, max, min, **kwargs)
+        with self.pipe as p:
+            return p.zrevrangebyscore(self.key, max, min, **kwargs)
 
     def zcard(self):
         """
@@ -882,7 +905,8 @@ class RedisSortedSet(RedisContainer):
         3
         > s.clear()
         """
-        return self._backend.zcard(self.key)
+        with self.pipe as p:
+            return p.zcard(self.key)
 
     def zscore(self, elem):
         """
@@ -896,7 +920,8 @@ class RedisSortedSet(RedisContainer):
         > s.clear()
         :param elem:
         """
-        return self._backend.zscore(self.key, elem)
+        with self.pipe as p:
+            return p.zscore(self.key, elem)
 
     def zremrangebyrank(self, start, stop):
         """
@@ -920,7 +945,8 @@ class RedisSortedSet(RedisContainer):
         ['a']
         > s.clear()
         """
-        return self._backend.zremrangebyrank(self.key, start, stop)
+        with self.pipe as p:
+            return p.zremrangebyrank(self.key, start, stop)
 
     def zremrangebyscore(self, min_value, max_value):
         """
@@ -944,7 +970,8 @@ class RedisSortedSet(RedisContainer):
         ['c']
         > s.clear()
         """
-        return self._backend.zremrangebyscore(self.key, min_value, max_value)
+        with self.pipe as p:
+            return p.zremrangebyscore(self.key, min_value, max_value)
 
     def zrank(self, elem):
         """
@@ -958,14 +985,16 @@ class RedisSortedSet(RedisContainer):
         > s.clear()
         :param elem:
         """
-        return self._backend.zrank(self.key, elem)
+        with self.pipe as p:
+            return p.zrank(self.key, elem)
 
     def zcount(self, min, max):
         """
         Returns the number of elements in the sorted set at key ``name`` with
         a score between ``min`` and ``max``.
         """
-        return self._backend.zcount(self.key, min, max)
+        with self.pipe as p:
+            return p.zcount(self.key, min, max)
 
     def eq(self, value):
         """
@@ -990,7 +1019,8 @@ class RedisHash(RedisContainer):
         """
         Returns the number of elements in the Hash.
         """
-        return self._backend.hlen(self.key)
+        with self.pipe as p:
+            return p.hlen(self.key)
 
     def hset(self, member, value):
         """
@@ -1007,7 +1037,8 @@ class RedisHash(RedisContainer):
         1L
         > h.clear()
         """
-        return self._backend.hset(self.key, member, value)
+        with self.pipe as p:
+            return p.hset(self.key, member, value)
 
     def hsetnx(self, member, value):
         """
@@ -1024,7 +1055,8 @@ class RedisHash(RedisContainer):
         1L
         > h.clear()
         """
-        return self._backend.hsetnx(self.key, member, value)
+        with self.pipe as p:
+            return p.hsetnx(self.key, member, value)
 
     def hdel(self, *members):
         """
@@ -1040,13 +1072,15 @@ class RedisHash(RedisContainer):
         1
         > h.clear()
         """
-        return self._backend.hdel(self.key, *_parse_values(members))
+        with self.pipe as p:
+            return p.hdel(self.key, *_parse_values(members))
 
     def hkeys(self):
         """
         Returns all fields name in the Hash
         """
-        return self._backend.hkeys(self.key)
+        with self.pipe as p:
+            return p.hkeys(self.key)
 
     def hgetall(self):
         """
@@ -1054,7 +1088,8 @@ class RedisHash(RedisContainer):
 
         :rtype: dict
         """
-        return self._backend.hgetall(self.key)
+        with self.pipe as p:
+            return p.hgetall(self.key)
 
     def hvals(self):
         """
@@ -1062,21 +1097,24 @@ class RedisHash(RedisContainer):
 
         :rtype: list
         """
-        return self._backend.hvals(self.key)
+        with self.pipe as p:
+            return p.hvals(self.key)
 
     def hget(self, field):
         """
         Returns the value stored in the field, None if the field doesn't exist.
         :param field:
         """
-        return self._backend.hget(self.key, field)
+        with self.pipe as p:
+            return p.hget(self.key, field)
 
     def hexists(self, field):
         """
         Returns ``True`` if the field exists, ``False`` otherwise.
         :param field:
         """
-        return self._backend.hexists(self.key, field)
+        with self.pipe as p:
+            return p.hexists(self.key, field)
 
     def hincrby(self, field, increment=1):
         """
@@ -1092,14 +1130,16 @@ class RedisHash(RedisContainer):
         12L
         > h.clear()
         """
-        return self._backend.hincrby(self.key, field, increment)
+        with self.pipe as p:
+            return p.hincrby(self.key, field, increment)
 
     def hmget(self, fields):
         """
         Returns the values stored in the fields.
         :param fields:
         """
-        return self._backend.hmget(self.key, fields)
+        with self.pipe as p:
+            return p.hmget(self.key, fields)
 
     def hmset(self, mapping):
         """
@@ -1107,7 +1147,8 @@ class RedisHash(RedisContainer):
 
         :param mapping: a dict with keys and values
         """
-        return self._backend.hmset(self.key, mapping)
+        with self.pipe as p:
+            return p.hmset(self.key, mapping)
 
 
 class RedisDistributedHash(RedisContainer):
@@ -1168,7 +1209,7 @@ class RedisDistributedHash(RedisContainer):
         else:
             return sum(
                 [self._backend.hdel(self.redis_sharded_key(member), member)
-                    for member in _parse_values(members)])
+                 for member in _parse_values(members)])
 
     def hget(self, field):
         """
@@ -1203,7 +1244,6 @@ class RedisDistributedHash(RedisContainer):
 
 
 class RedisIndex(RedisHash):
-
     @classmethod
     def db_key(cls, shard):
         return getattr(cls, '_key_tpl', cls.__name__ + ":%s:u") % shard
@@ -1224,12 +1264,17 @@ class RedisIndex(RedisHash):
 
     @classmethod
     def mget(cls, keys, pipe=None):
-        p = Pipeline() if pipe is None else pipe
-        mapping = {k: cls.shard(k, pipe=p).hget(k) for k in keys}
-        if pipe is not None:
-            return mapping
-        p.execute()
-        return {k: v.data for k, v in mapping.items() if v.data}
+
+        with redpipe.pipeline(pipe=pipe, autoexec=True) as p:
+            f = redpipe.Future()
+            mapping = {k: cls.shard(k, pipe=p).hget(k) for k in keys}
+
+            def cb():
+                f.set({k: v for k, v in mapping.items() if v.result})
+
+            p.on_execute(cb)
+
+            return f
 
     @classmethod
     def remove(cls, key, pipe=None):
@@ -1245,14 +1290,14 @@ class RedisIndex(RedisHash):
 
     @classmethod
     def all(cls):
-        db = cls.db()
-        keys = [cls.db_key(i) for i in
-                xrange(0, cls.shard_count() - 1)]
+        keys = [cls.db_key(i) for i in range(0, cls.shard_count() - 1)]
         for key in keys:
             cursor = 0
             while True:
-                cursor, elements = db.hscan(key, cursor=cursor,
-                                            count=500)
+                with redpipe.pipeline(name=cls._db, autoexec=True) as pipe:
+                    res = pipe.hscan(key, cursor=cursor, count=500)
+
+                cursor, elements = res
                 if elements:
                     for k, v in elements.items():
                         yield k, v
@@ -1262,7 +1307,6 @@ class RedisIndex(RedisHash):
 
 
 class RedisObject(object):
-
     @classmethod
     def save(cls, instance, pipe=None, full=False):
 
@@ -1328,8 +1372,8 @@ class RedisObject(object):
             r = s.hmget(fields)
 
             def set_data():
-                if any(v is not None for v in r.data):
-                    ref.load_(r.data)
+                if any(v is not None for v in r.result):
+                    ref.load_(r.result)
                 else:
                     setattr(ref, '_new', True)
 
@@ -1345,10 +1389,10 @@ class RedisObject(object):
 
     @classmethod
     def ref(cls, pk, pipe=None):
-        r = getattr(cls, 'definition')(_ref=pk, _parent=cls)
         if pipe is not None:
-            pipe.attach(r)
-        return r
+            return cls.get(pk, pipe=pipe)
+
+        return getattr(cls, 'definition')(_ref=pk, _parent=cls)
 
     @classmethod
     def is_hot_key(cls, key):
@@ -1372,8 +1416,8 @@ class RedisObject(object):
         r = s.hmget(fields)
 
         def set_data():
-            if any(v is not None for v in r.data):
-                ref.load_(r.data)
+            if any(v is not None for v in r.result):
+                ref.load_(r.result)
             else:
                 setattr(ref, '_new', True)
 
@@ -1381,7 +1425,6 @@ class RedisObject(object):
 
 
 class RedisColdStorageObject(RedisObject):
-
     @classmethod
     def delete(cls, _pk, pipe=None):
         res = super(RedisColdStorageObject, cls).delete(_pk, pipe=pipe)
@@ -1412,14 +1455,14 @@ class RedisColdStorageObject(RedisObject):
         missing_cache = {}
         for pk in cold_keys:
             s = storage(pk, pipe=p)
-            s.persist()
-            missing_cache[pk] = s.pipeline.exists("%s__xx" % s.key)
+            with s.pipe as pp:
+                missing_cache[pk] = pp.exists("%s__xx" % s.key)
 
         refs = super(RedisColdStorageObject, cls).get_multi(_pks, pipe=p)
 
         def cb():
             for pk, ref in missing_cache.items():
-                if ref.data:
+                if ref.result:
                     cold_keys.remove(pk)
 
             missing = {r.primary_key() for r in refs if not r.exists() and
@@ -1427,7 +1470,7 @@ class RedisColdStorageObject(RedisObject):
             found = {k: v for k, v in cold_storage.get_multi(missing).items()
                      if v is not None}
 
-            pp = Pipeline()
+            pp = Pipeline(name=storage._db)
             definition = getattr(cls, 'definition')
             fields = getattr(definition, '_fields')
             freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
@@ -1439,9 +1482,8 @@ class RedisColdStorageObject(RedisObject):
                 return s.hmget(fields)
 
             def _no_load(k):
-                s = storage(k, pipe=pp)
-                s.pipeline.set('%s__xx' % s.key, '1')
-                s.pipeline.expire('%s__xx' % s.key, freeze_ttl - 1)
+                pp.set('%s__xx' % s.key, '1')
+                pp.expire('%s__xx' % s.key, freeze_ttl - 1)
 
             found = {k: _load(k, v) for k, v in found.items()}
             for k in missing:
@@ -1454,7 +1496,7 @@ class RedisColdStorageObject(RedisObject):
                 if ref.exists() or ref.primary_key() not in missing:
                     continue
                 try:
-                    ref.load_(found[ref.primary_key()].data)
+                    ref.load_(found[ref.primary_key()].result)
                 except KeyError:
                     setattr(ref, '_new', True)
             cold_storage.delete_multi(found.keys())
@@ -1477,18 +1519,20 @@ class RedisColdStorageObject(RedisObject):
         frozen_key_cache = "%s__xx" % s.key
         if not cls.is_hot_key(_pk):
             s.persist()
-            missing_cache = s.pipeline.exists(frozen_key_cache)
+            with s.pipe as pp:
+                missing_cache = pp.exists(frozen_key_cache)
+
         r = s.hmget(fields)
 
         def set_data():
-            if any(v is not None for v in r.data):
-                ref.load_(r.data)
+            if any(v is not None for v in r.result):
+                ref.load_(r.result)
                 return
 
             if cls.is_hot_key(_pk):
                 return
 
-            if missing_cache and missing_cache.data:
+            if missing_cache and missing_cache.result:
                 return
 
             frozen = cold_storage.get(_pk)
@@ -1505,7 +1549,7 @@ class RedisColdStorageObject(RedisObject):
 
             s.restore(frozen)
             rr = s.hmget(fields)
-            p.on_execute(lambda: ref.load_(rr.data))
+            p.on_execute(lambda: ref.load_(rr.result))
             p.execute()
             cold_storage.delete(_pk)
 
@@ -1513,12 +1557,13 @@ class RedisColdStorageObject(RedisObject):
 
     @classmethod
     def save(cls, instance, pipe=None, full=False):
-        p = Pipeline() if pipe is None else pipe
-        res = super(RedisColdStorageObject, cls).save(instance, pipe=p, full=full)
+        p = Pipeline(pipe=pipe, name=cls.storage._db)
+        res = super(RedisColdStorageObject, cls).save(instance, pipe=p,
+                                                      full=full)
         if res != 0:
             storage = getattr(cls, 'storage')
             s = storage(instance.primary_key(), pipe=p)
-            s.pipeline.delete('%s__xx' % s.key)
+            p.delete('%s__xx' % s.key)
 
         if pipe is None:
             p.execute()
@@ -1546,11 +1591,13 @@ class RedisColdStorageObject(RedisObject):
         results = {k: dump(k) for k in ids}
         try:
             p.execute()
-            results = {k: res.data for k, res in results.items() if res.data is not None}
+            results = {k: res.result for k, res in results.items() if
+                       res.result is not None}
             if results:
                 cold_storage.set_multi(results)
         except (Exception, KeyboardInterrupt, SystemExit):
-            # if anything at all goes wrong, make sure to clear the TTL on any objects
+            # if anything at all goes wrong, make sure to clear the TTL on
+            # any objects
             # we were trying to freeze
             p = Pipeline()
             map(lambda k: storage(k, pipe=p).persist(), ids)

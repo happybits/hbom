@@ -6,7 +6,7 @@ import unittest
 import re
 
 # test harness
-from setup import generate_uuid
+from unit_test_setup import generate_uuid
 
 # test-harness
 from setup_redis import (
@@ -28,7 +28,7 @@ class Sample(hbom.RedisObject):
 
     class storage(hbom.RedisHash):
         _keyspace = 'TT_s'
-        _db = default_redis_connection
+        _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -57,7 +57,7 @@ class TestRedisDefinitionPersistence(unittest.TestCase):
         self.assertFalse(x_ref.exists())
         self.assertFalse(y.exists())
         self.assertFalse(z.exists())
-        pipe.attach(x_ref)
+        x_ref.attach(pipe)
         pipe.execute()
 
         self.assertTrue(x.exists())
@@ -136,7 +136,7 @@ class Foo(hbom.RedisColdStorageObject):
 
     class storage(hbom.RedisHash):
         _keyspace = 'FOO'
-        _db = default_redis_connection
+        _db = 'test'
 
     coldstorage = ColdStorageMock()
 
@@ -210,7 +210,7 @@ class TestRedisColdStorage(unittest.TestCase):
         c = Foo.new(id='c')
         Foo.save(c)
         c = Foo.ref('c')
-        hbom.Pipeline().hydrate([c])
+        hbom.hydrate([c])
         self.assertTrue(c.exists())
         self.assertIsNone(default_redis_connection.get('FOO{c}__xx'))
 

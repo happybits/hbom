@@ -13,7 +13,7 @@ from setup_redis import (
 
 
 class ListModel(hbom.RedisList):
-    _db = default_redis_connection
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -141,7 +141,7 @@ class ListTestCase(unittest.TestCase):
 
 
 class SampleSet(hbom.RedisSet):
-    _db = default_redis_connection
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -199,7 +199,7 @@ class SetTestCase(unittest.TestCase):
 
 
 class SortedSetModel(hbom.RedisSortedSet):
-    _db = default_redis_connection
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -275,7 +275,7 @@ class SortedSetTestCase(unittest.TestCase):
 
 
 class HashModel(hbom.RedisHash):
-    _db = default_redis_connection
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -318,7 +318,7 @@ class HashTestCase(unittest.TestCase):
 
 
 class IndexModel(hbom.RedisIndex):
-    _db = default_redis_connection
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -351,19 +351,17 @@ class IndexTestCase(unittest.TestCase):
         IndexModel.setnx('bazz', 'e', pipe=pipe)
         res = IndexModel.mget(['foo', 'bar', 'bazz'], pipe=pipe)
         pipe.execute()
-        self.assertEqual(
-            {k: v.data for k, v in res.items()},
-            {'foo': 'a', 'bar': 'b', 'bazz': 'd'})
+        self.assertEqual(res, {'foo': 'a', 'bar': 'b', 'bazz': 'd'})
 
         pipe = hbom.Pipeline()
         res = IndexModel.get('foo', pipe=pipe)
         pipe.execute()
-        self.assertEqual(res.data, 'a')
+        self.assertEqual(res, 'a')
 
 
 class SortedSetDemo(hbom.redis_backend.RedisSortedSet):
     _keyspace = 'TT_SortedidTest'
-    _db = default_redis_connection
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -386,7 +384,7 @@ class TestSortedSetIds(unittest.TestCase):
 
 
 class SampleString(hbom.RedisString):
-    _db = default_redis_connection
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -419,10 +417,10 @@ class TestString(unittest.TestCase):
         get_result = s.get()
         pipe.execute()
 
-        self.assertEqual(bar_result.data, True)
-        self.assertEqual(bazz_result.data, True)
-        self.assertEqual(quux_result.data, False)
-        self.assertEqual(get_result.data, 'bazz')
+        self.assertEqual(bar_result, True)
+        self.assertEqual(bazz_result, True)
+        self.assertEqual(quux_result, False)
+        self.assertEqual(get_result, 'bazz')
 
 
 @skip_if_redis_disabled
@@ -443,7 +441,7 @@ class TestExpire(unittest.TestCase):
         s = SampleString('foo', pipe=p)
         res = s.expire(2)
         p.execute()
-        self.assertEqual(res.data, True)
+        self.assertEqual(res, True)
         res = SampleString('foo').object('IDLETIME')
         self.assertAlmostEqual(res, 0, places=-1)
 

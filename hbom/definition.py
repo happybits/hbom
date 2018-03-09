@@ -27,7 +27,7 @@ class DefinitionMeta(type):
 
         # validate all of our fields to ensure that they fulfill our
         # expectations
-        for attr, col in d.iteritems():
+        for attr, col in d.items():
             if isinstance(col, Field):
                 col.attr = attr
                 col.model = name
@@ -101,6 +101,15 @@ class Definition(object):
 
     def primary_key(self):
         return getattr(self, self.__class__._pkey)
+
+    def attach(self, pipe):
+        if self._parent is None:
+            return
+
+        if self._init or self.exists():
+            return
+
+        self._parent.prepare(self, pipe=pipe)
 
     def exists(self):
         return True if self._data and self._init and not self._new else False
