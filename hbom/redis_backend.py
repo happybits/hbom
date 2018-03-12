@@ -1362,30 +1362,27 @@ class RedisObject(object):
     @classmethod
     def get_multi(cls, _pks, pipe=None):
         definition = getattr(cls, 'definition')
-        p = Pipeline() if pipe is None else pipe
-        storage = getattr(cls, 'storage')
-        fields = getattr(definition, '_fields')
+        with Pipeline(pipe=pipe, autoexec=True) as p:
+            storage = getattr(cls, 'storage')
+            fields = getattr(definition, '_fields')
 
-        def prep(pk):
-            ref = definition(_ref=pk, _parent=cls)
-            s = storage(pk, pipe=p)
-            r = s.hmget(fields)
+            def prep(pk):
+                ref = definition(_ref=pk, _parent=cls)
+                s = storage(pk, pipe=p)
+                r = s.hmget(fields)
 
-            def set_data():
-                if any(v is not None for v in r.result):
-                    ref.load_(r.result)
-                else:
-                    setattr(ref, '_new', True)
+                def set_data():
+                    if any(v is not None for v in r.result):
+                        ref.load_(r.result)
+                    else:
+                        setattr(ref, '_new', True)
 
-            p.on_execute(set_data)
-            return ref
+                p.on_execute(set_data)
+                return ref
 
-        refs = [prep(pk) for pk in _pks]
+            refs = [prep(pk) for pk in _pks]
 
-        if pipe is None:
-            p.execute()
-
-        return refs
+            return refs
 
     @classmethod
     def ref(cls, pk, pipe=None):
@@ -1448,65 +1445,62 @@ class RedisColdStorageObject(RedisObject):
 
     @classmethod
     def get_multi(cls, _pks, pipe=None):
-        p = Pipeline() if pipe is None else pipe
         storage = getattr(cls, 'storage')
-        cold_storage = getattr(cls, 'coldstorage')
-        cold_keys = {pk for pk in _pks if not cls.is_hot_key(pk)}
-        missing_cache = {}
-        for pk in cold_keys:
-            s = storage(pk, pipe=p)
-            with s.pipe as pp:
-                missing_cache[pk] = pp.exists("%s__xx" % s.key)
+        storage_name = getattr(storage, '_db')
+        with Pipeline(pipe=pipe, name=storage_name, autoexec=True) as p:
 
-        refs = super(RedisColdStorageObject, cls).get_multi(_pks, pipe=p)
+            cold_storage = getattr(cls, 'coldstorage')
+            cold_keys = {pk for pk in _pks if not cls.is_hot_key(pk)}
+            missing_cache = {}
+            for pk in cold_keys:
+                s = storage(pk, pipe=p)
+                with s.pipe as pp:
+                    missing_cache[pk] = pp.exists("%s__xx" % s.key)
 
-        def cb():
-            for pk, ref in missing_cache.items():
-                if ref.result:
-                    cold_keys.remove(pk)
+            refs = super(RedisColdStorageObject, cls).get_multi(_pks, pipe=p)
 
-            missing = {r.primary_key() for r in refs if not r.exists() and
-                       r.primary_key() in cold_keys}
-            found = {k: v for k, v in cold_storage.get_multi(missing).items()
-                     if v is not None}
+            def cb():
+                for pk, ref in missing_cache.items():
+                    if ref.result:
+                        cold_keys.remove(pk)
 
-            pp = Pipeline(name=storage._db)
-            definition = getattr(cls, 'definition')
-            fields = getattr(definition, '_fields')
-            freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
+                missing = {r.primary_key() for r in refs if not r.exists() and
+                           r.primary_key() in cold_keys}
+                found = {k: v for k, v in cold_storage.get_multi(missing).items()
+                         if v is not None}
 
-            def _load(k, v):
-                s = storage(k, pipe=pp)
-                s.persist()
-                s.restore(v)
-                return s.hmget(fields)
+                with Pipeline(name=storage_name, autoexec=True) as pp:
+                    definition = getattr(cls, 'definition')
+                    fields = getattr(definition, '_fields')
+                    freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
 
-            def _no_load(k):
-                pp.set('%s__xx' % s.key, '1')
-                pp.expire('%s__xx' % s.key, freeze_ttl - 1)
+                    def _load(k, v):
+                        s = storage(k, pipe=pp)
+                        s.persist()
+                        s.restore(v)
+                        return s.hmget(fields)
 
-            found = {k: _load(k, v) for k, v in found.items()}
-            for k in missing:
-                if k in found:
-                    continue
-                _no_load(k)
+                    def _no_load(k):
+                        pp.set('%s__xx' % s.key, '1')
+                        pp.expire('%s__xx' % s.key, freeze_ttl - 1)
 
-            pp.execute()
-            for ref in refs:
-                if ref.exists() or ref.primary_key() not in missing:
-                    continue
-                try:
-                    ref.load_(found[ref.primary_key()].result)
-                except KeyError:
-                    setattr(ref, '_new', True)
-            cold_storage.delete_multi(found.keys())
+                    found = {k: _load(k, v) for k, v in found.items()}
+                    for k in missing:
+                        if k in found:
+                            continue
+                        _no_load(k)
 
-        p.on_execute(cb)
+                for ref in refs:
+                    if ref.exists() or ref.primary_key() not in missing:
+                        continue
+                    try:
+                        ref.load_(found[ref.primary_key()].result)
+                    except KeyError:
+                        setattr(ref, '_new', True)
+                cold_storage.delete_multi(found.keys())
 
-        if pipe is None:
-            p.execute()
-
-        return refs
+            p.on_execute(cb)
+            return refs
 
     @classmethod
     def prepare(cls, ref, pipe):
@@ -1557,17 +1551,14 @@ class RedisColdStorageObject(RedisObject):
 
     @classmethod
     def save(cls, instance, pipe=None, full=False):
-        p = Pipeline(pipe=pipe, name=cls.storage._db)
-        res = super(RedisColdStorageObject, cls).save(instance, pipe=p,
-                                                      full=full)
-        if res != 0:
-            storage = getattr(cls, 'storage')
-            s = storage(instance.primary_key(), pipe=p)
-            p.delete('%s__xx' % s.key)
-
-        if pipe is None:
-            p.execute()
-        return res
+        storage = getattr(cls, 'storage')
+        with Pipeline(pipe=pipe, name=getattr(storage, '_db'), autoexec=True) as p:
+            res = super(RedisColdStorageObject, cls).save(instance, pipe=p,
+                                                          full=full)
+            if res != 0:
+                s = storage(instance.primary_key(), pipe=p)
+                p.delete('%s__xx' % s.key)
+            return res
 
     @classmethod
     def freeze(cls, *ids):
