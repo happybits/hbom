@@ -1465,8 +1465,8 @@ class RedisColdStorageObject(RedisObject):
             missing_cache = {}
             for pk in cold_keys:
                 s = storage(pk, pipe=p)
-                with s.pipe as pp:
-                    missing_cache[pk] = pp.exists("%s__xx" % s.key)
+                s.persist()
+                missing_cache[pk] = p.exists("%s__xx" % s.key)
 
             refs = super(RedisColdStorageObject, cls).get_multi(_pks, pipe=p)
 
