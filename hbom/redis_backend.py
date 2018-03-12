@@ -1507,7 +1507,8 @@ class RedisColdStorageObject(RedisObject):
         _pk = ref.primary_key()
         definition = ref.__class__
         fields = getattr(definition, '_fields')
-        s = getattr(cls, 'storage')(_pk, pipe=pipe)
+        storage = getattr(cls, 'storage')
+        s = storage(_pk, pipe=pipe)
         cold_storage = getattr(cls, 'coldstorage')
         missing_cache = False
         frozen_key_cache = "%s__xx" % s.key
@@ -1531,21 +1532,22 @@ class RedisColdStorageObject(RedisObject):
 
             frozen = cold_storage.get(_pk)
 
-            p = Pipeline()
-            s = getattr(cls, 'storage')(_pk, pipe=p)
+            with Pipeline(name=getattr(storage, '_db')) as p:
 
-            if frozen is None:
-                freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
-                s.pipeline.set(frozen_key_cache, '1')
-                s.pipeline.expire(frozen_key_cache, freeze_ttl - 1)
+                s = storage(_pk, pipe=p)
+
+                if frozen is None:
+                    freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
+                    p.set(frozen_key_cache, '1')
+                    p.expire(frozen_key_cache, freeze_ttl - 1)
+                    p.execute()
+                    return
+
+                s.restore(frozen)
+                rr = s.hmget(fields)
+                p.on_execute(lambda: ref.load_(rr.result))
                 p.execute()
-                return
-
-            s.restore(frozen)
-            rr = s.hmget(fields)
-            p.on_execute(lambda: ref.load_(rr.result))
-            p.execute()
-            cold_storage.delete(_pk)
+                cold_storage.delete(_pk)
 
         pipe.on_execute(set_data)
 
