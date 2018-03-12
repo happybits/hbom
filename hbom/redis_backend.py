@@ -20,7 +20,6 @@ except ImportError:
 
 # internal modules
 from .pipeline import Pipeline
-from .exceptions import OperationUnsupportedException
 
 __all__ = ['RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
@@ -252,7 +251,8 @@ class RedisString(RedisContainer):
         increment the value for key by value: int
         :param value:
         """
-        return self._backend.incrby(self.key, value)
+        with self.pipe as p:
+            return p.incrby(self.key, value)
 
     def incrbyfloat(self, value=1.0):
         """
@@ -1166,11 +1166,15 @@ class RedisDistributedHash(RedisContainer):
         """
         Returns the number of elements in the Hash.
         """
-        if self.pipeline:
-            raise OperationUnsupportedException()
-        else:
-            return sum([self._backend.hlen("%s:%s" % (self.key, i))
-                        for i in range(0, self._shards)])
+        with self.pipe as p:
+            data = [p.hlen("%s:%s" % (self.key, i)) for i in range(0, self._shards)]
+            f = redpipe.Future()
+
+            def cb():
+                f.set(sum(data))
+
+            p.on_execute(cb)
+            return f
 
     def hset(self, member, value):
         """
@@ -1187,8 +1191,8 @@ class RedisDistributedHash(RedisContainer):
         1L
         > h.clear()
         """
-        return self._backend.hset(
-            self.redis_sharded_key(member), member, value)
+        with self.pipe as p:
+            return p.hset(self.redis_sharded_key(member), member, value)
 
     def hdel(self, *members):
         """
@@ -1204,26 +1208,33 @@ class RedisDistributedHash(RedisContainer):
         1
         > h.clear()
         """
-        if self.pipeline:
-            raise OperationUnsupportedException()
-        else:
-            return sum(
-                [self._backend.hdel(self.redis_sharded_key(member), member)
-                 for member in _parse_values(members)])
+
+        with self.pipe as p:
+            data = [p.hdel(self.redis_sharded_key(member), member)
+                    for member in _parse_values(members)]
+            f = redpipe.Future()
+
+            def cb():
+                f.set(sum(data))
+
+            p.on_execute(cb)
+            return f
 
     def hget(self, field):
         """
         Returns the value stored in the field, None if the field doesn't exist.
         :param field:
         """
-        return self._backend.hget(self.redis_sharded_key(field), field)
+        with self.pipe as p:
+            return p.hget(self.redis_sharded_key(field), field)
 
     def hexists(self, field):
         """
         Returns ``True`` if the field exists, ``False`` otherwise.
         :param field:
         """
-        return self._backend.hexists(self.redis_sharded_key(field), field)
+        with self.pipe as p:
+            return p.hexists(self.redis_sharded_key(field), field)
 
     def hincrby(self, field, increment=1):
         """
@@ -1239,8 +1250,8 @@ class RedisDistributedHash(RedisContainer):
         12L
         > h.clear()
         """
-        return self._backend.hincrby(
-            self.redis_sharded_key(field), field, increment)
+        with self.pipe as p:
+            return p.hincrby(self.redis_sharded_key(field), field, increment)
 
 
 class RedisIndex(RedisHash):
