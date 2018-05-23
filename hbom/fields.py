@@ -1,9 +1,11 @@
-from builtins import str
 from builtins import object
 from .compat import json
 from decimal import Decimal
 from .exceptions import FieldError, InvalidFieldValue, \
     MissingField, InvalidOperation
+from future.utils import PY2
+import future.builtins
+import re
 
 __all__ = '''
 Field
@@ -18,11 +20,13 @@ ListField
 BooleanField
 '''.split()
 
+unicode = unicode if PY2 else str
+
 _NUMERIC = (0, 0.0, Decimal('0'))
 
 NULL = object()
 
-_SCALAR = [str]
+_SCALAR = (str, unicode, future.builtins.str)
 
 
 class Field(object):
@@ -65,7 +69,13 @@ class Field(object):
 
         if primary:
             if not any(isinstance(i, self._allowed) for i in _NUMERIC):
-                if self._allowed not in _SCALAR:
+                if not self._allowed:
+                    raise FieldError(
+                        "this field type cannot be primary"
+                    )
+                allowed = self._allowed[0] if \
+                    isinstance(self._allowed, (tuple, list)) else self._allowed
+                if allowed not in _SCALAR:
                     raise FieldError(
                         "this field type cannot be primary"
                     )
@@ -325,13 +335,21 @@ class StringField(Field):
         class MyModel(Model):
             col = String()
     """
-    _allowed = str
+    _allowed = _SCALAR
+    PATTERN = re.compile('^([ -~]+)?$')
 
     def from_persistence(self, value):
-        return str(value)
+        return None if value is None else unicode(value.decode('utf-8'))
 
     def to_persistence(self, value):
-        return value
+        try:
+            coerced = unicode(value)
+            if coerced == value and self.PATTERN.match(coerced):
+                return coerced.encode('utf-8')
+        except (UnicodeError, TypeError):
+            pass
+
+        raise InvalidFieldValue('not ascii')
 
 
 class TextField(Field):
@@ -354,9 +372,11 @@ class TextField(Field):
     _allowed = str
 
     def to_persistence(self, value):
-        return value.encode('utf-8')
+        try:
+            coerced = unicode(value)
+            return coerced.encode('utf-8')
+        except (UnicodeError, TypeError):
+            raise InvalidFieldValue('not ascii')
 
     def from_persistence(self, value):
-        if isinstance(value, str):
-            return value.decode('utf-8')
-        return value
+        return None if value is None else unicode(value.decode('utf-8'))

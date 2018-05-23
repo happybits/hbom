@@ -68,6 +68,18 @@ setup(
     author_email='john@happybits.co',
     url='https://github.com/happybits/hbom',
     packages=['hbom'],
+    install_requires=['redpipe>=2.0.0', 'future'],
+    tests_require=[
+        'mock',
+        'tox',
+        'testfixtures',
+        'python-coveralls',
+        'line_profiler',
+        'python-coveralls',
+        'Cython>=0.23.4'
+        'redislite>=3.0.271',
+        'redis-py-cluster>=1.3.0'
+    ],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Programming Language :: Python',

@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-from builtins import str
 import json
 from unit_test_setup import hbom, generate_uuid
 import unittest

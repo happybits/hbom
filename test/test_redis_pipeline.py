@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 # std lib
-from builtins import str
 from builtins import range
 import time
 import unittest
