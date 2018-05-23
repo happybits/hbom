@@ -1,3 +1,5 @@
+from builtins import str
+from builtins import object
 from .compat import json
 from decimal import Decimal
 from .exceptions import FieldError, InvalidFieldValue, \
@@ -20,7 +22,7 @@ _NUMERIC = (0, 0.0, Decimal('0'))
 
 NULL = object()
 
-_SCALAR = [str, unicode]
+_SCALAR = [str]
 
 
 class Field(object):
@@ -63,7 +65,7 @@ class Field(object):
 
         if primary:
             if not any(isinstance(i, self._allowed) for i in _NUMERIC):
-                if self._allowed not in (str, unicode):
+                if self._allowed not in _SCALAR:
                     raise FieldError(
                         "this field type cannot be primary"
                     )
@@ -74,7 +76,7 @@ class Field(object):
         return convert(value)
 
     def to_persistence(self, value):
-        if isinstance(value, long):
+        if isinstance(value, int):
             return str(value)
         return repr(value)
 
@@ -245,7 +247,7 @@ class FloatField(Field):
         class MyModel(Model):
             col = Float()
     """
-    _allowed = (float, int, long)
+    _allowed = (float, int)
 
 
 class IntegerField(Field):
@@ -259,7 +261,7 @@ class IntegerField(Field):
         class MyModel(Model):
             col = Integer()
     """
-    _allowed = (int, long)
+    _allowed = int
 
 
 class JsonField(Field):
@@ -286,16 +288,21 @@ class ListField(JsonField):
     _allowed = list
 
     def from_persistence(self, value):
+        if value is None:
+            return None
         if isinstance(value, self._allowed):
             return value
         try:
             return json.loads(value)
         except (ValueError, TypeError) as e:
-            if isinstance(value, str):
-                if len(value) > 0:
-                    return value.split(',')
-                else:
-                    return None
+            pass
+
+        try:
+            if len(value) > 0:
+                return value.split(',')
+            else:
+                return None
+        except (TypeError, AttributeError) as e:
             raise InvalidFieldValue(*e.args)
 
 
@@ -344,7 +351,7 @@ class TextField(Field):
         class MyModel(Model):
             col = Text()
     """
-    _allowed = unicode
+    _allowed = str
 
     def to_persistence(self, value):
         return value.encode('utf-8')

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 # std-lib
+from builtins import range
 import time
 import unittest
 import os
@@ -78,7 +79,7 @@ class TestModelIds(unittest.TestCase):
 
     def test_ids(self):
         expected_ids = []
-        for i in xrange(1, 201):
+        for i in range(1, 201):
             x = Demo.new(id='a-%s' % i)
             Demo.save(x)
             expected_ids.append(x.id)

@@ -1,6 +1,8 @@
+from builtins import object
 import json
 from .exceptions import FieldError, MissingField
 from .fields import Field
+from future.utils import with_metaclass
 
 __all__ = ['Definition']
 
@@ -46,7 +48,7 @@ class DefinitionMeta(type):
         return model
 
 
-class Definition(object):
+class Definition(with_metaclass(DefinitionMeta, object)):
     """
     This is the base class for all models. You subclass from this base Model
     in order to create a model with fields. As an example::
@@ -66,7 +68,6 @@ class Definition(object):
         users = User.get([2, 6, 1, 7])
 
     """
-    __metaclass__ = DefinitionMeta
 
     def __init__(self, **kwargs):
 

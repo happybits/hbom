@@ -1,4 +1,7 @@
 # std-lib
+from builtins import map
+from builtins import range
+from builtins import object
 import hashlib
 import re
 import redpipe
@@ -1160,7 +1163,7 @@ class RedisDistributedHash(RedisContainer):
     def redis_sharded_key(self, member):
         return "%s:%s" % (
             self.key,
-            long(hashlib.md5(member).hexdigest(), 16) % self._shards)
+            int(hashlib.md5(member).hexdigest(), 16) % self._shards)
 
     def hlen(self):
         """
@@ -1263,7 +1266,7 @@ class RedisIndex(RedisHash):
     def shard(cls, key, pipe=None):
         shard_ct = cls.shard_count()
         keyhash = hashlib.md5(key).hexdigest()
-        return cls(long(keyhash, 16) % shard_ct, pipe=pipe)
+        return cls(int(keyhash, 16) % shard_ct, pipe=pipe)
 
     @classmethod
     def shard_count(cls):

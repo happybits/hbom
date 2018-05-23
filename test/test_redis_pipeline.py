@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 # std lib
+from builtins import str
+from builtins import range
 import time
 import unittest
 from uuid import uuid4
@@ -139,7 +141,7 @@ class TestPipeline(unittest.TestCase):
         foo_ids = []
         bazz_ids = []
         quux_ids = []
-        for i in xrange(1, 5):
+        for i in range(1, 5):
             o = Foo.new(a='test')
             o.a = o.primary_key()
             Foo.save(o)

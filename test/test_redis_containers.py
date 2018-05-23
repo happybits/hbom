@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 # std-lib
+from builtins import range
 import unittest
 
 # test-harness
@@ -374,7 +375,7 @@ class TestSortedSetIds(unittest.TestCase):
 
     def test_ids(self):
         expected_ids = []
-        for x in xrange(1, 201):
+        for x in range(1, 201):
             i = 'a-%s' % x
             SortedSetDemo(i).add('test', 1)
             expected_ids.append(i)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 # std-lib
+from builtins import range
 import uuid
 import time
 import line_profiler
@@ -60,7 +61,7 @@ def bench(iterations=1000):
     }
 
     device_ids = []
-    for _ in xrange(iterations):
+    for _ in range(iterations):
 
         d = Device.new(**device_args)
         Device.save(d)
