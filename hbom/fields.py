@@ -77,13 +77,21 @@ class Field(object):
         return repr(value)
 
     def validate(self, value):
-        if value is not None:
-            if isinstance(value, self._allowed):
-                return
-        elif not self.required:
+        if value is None:
+            if self.required:
+                raise InvalidFieldValue('%s.%s is required' %
+                                        (self.model, self.attr))
             return
+
+        allowed = self._allowed if \
+            isinstance(self._allowed, (tuple, list)) else [self._allowed]
+
+        for a in allowed:
+            if isinstance(value, a):
+                return
+
         raise InvalidFieldValue("%s.%s has type %r but must be of type %r" % (
-            self.model, self.attr, type(value), self._allowed))
+            self.model, self.attr, type(value), allowed))
 
     def _init_(self, obj, value, loading):
         # You shouldn't be calling this directly, but this is what sets up all
