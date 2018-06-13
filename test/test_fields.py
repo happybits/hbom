@@ -13,11 +13,6 @@ class TestField(unittest.TestCase):
     def test_default(self):
         assert (hbom.Field(default=7))
 
-    def test_primary(self):
-        self.assertRaises(
-            hbom.FieldError,
-            lambda: hbom.Field(primary=True))
-
 
 class TestBooleanField(unittest.TestCase):
     def test_noargs(self):
@@ -119,11 +114,6 @@ class TestJsonField(unittest.TestCase):
     def test_default(self):
         assert (hbom.JsonField(default='a'))
 
-    def test_primary(self):
-        self.assertRaises(
-            hbom.FieldError, lambda:
-            hbom.JsonField(primary=True))
-
 
 class TestStringListField(unittest.TestCase):
     def test_noargs(self):
@@ -134,11 +124,6 @@ class TestStringListField(unittest.TestCase):
 
     def test_default(self):
         assert (hbom.StringListField(default='a'))
-
-    def test_primary(self):
-        self.assertRaises(
-            hbom.FieldError, lambda:
-            hbom.StringListField(primary=True))
 
     def test_mutables(self):
         class Test(hbom.Definition):

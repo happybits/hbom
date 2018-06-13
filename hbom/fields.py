@@ -1,7 +1,6 @@
-from builtins import object
 from .compat import json
 from decimal import Decimal
-from .exceptions import FieldError, InvalidFieldValue, \
+from .exceptions import InvalidFieldValue, \
     MissingField, InvalidOperation
 from future.utils import PY2
 import future.builtins
@@ -66,19 +65,6 @@ class Field(object):
         self.default = default
         self.model = None
         self.attr = None
-
-        if primary:
-            if not any(isinstance(i, self._allowed) for i in _NUMERIC):
-                if not self._allowed:
-                    raise FieldError(
-                        "this field type cannot be primary"
-                    )
-                allowed = self._allowed[0] if \
-                    isinstance(self._allowed, (tuple, list)) else self._allowed
-                if allowed not in _SCALAR:
-                    raise FieldError(
-                        "this field type cannot be primary"
-                    )
 
     def from_persistence(self, value):
         convert = self._allowed[0] if \
@@ -369,7 +355,7 @@ class TextField(Field):
         class MyModel(Model):
             col = Text()
     """
-    _allowed = str
+    _allowed = [unicode, str]
 
     def to_persistence(self, value):
         try:

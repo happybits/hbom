@@ -1,4 +1,3 @@
-from builtins import object
 import json
 from .exceptions import FieldError, MissingField
 from .fields import Field
