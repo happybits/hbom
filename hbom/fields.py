@@ -76,6 +76,20 @@ class Field(object):
             return str(value)
         return repr(value)
 
+    def _is_allowed(self, value):
+        if value is None:
+            return True
+        allowed = self._allowed if \
+            isinstance(self._allowed, (tuple, list)) else [self._allowed]
+
+        for a in allowed:
+            if isinstance(value, a):
+                return True
+
+        return False
+
+
+
     def validate(self, value):
         if value is None:
             if self.required:
@@ -86,9 +100,8 @@ class Field(object):
         allowed = self._allowed if \
             isinstance(self._allowed, (tuple, list)) else [self._allowed]
 
-        for a in allowed:
-            if isinstance(value, a):
-                return
+        if self._is_allowed(value):
+            return
 
         raise InvalidFieldValue("%s.%s has type %r but must be of type %r" % (
             self.model, self.attr, type(value), allowed))
@@ -111,7 +124,7 @@ class Field(object):
                 value = default()
             else:
                 value = self.default
-        elif not isinstance(value, self._allowed):
+        elif not self._is_allowed(value):
             try:
                 value = self.from_persistence(value)
             except (ValueError, TypeError) as e:
