@@ -88,8 +88,6 @@ class Field(object):
 
         return False
 
-
-
     def validate(self, value):
         if value is None:
             if self.required:
@@ -154,12 +152,6 @@ class Field(object):
         if value is None:
             return self.__delete__(obj)
 
-        try:
-            value = self.from_persistence(value)
-        except (ValueError, TypeError):
-            raise InvalidFieldValue(
-                "Cannot convert %r into type %s" % (value, self._allowed)
-            )
         self.validate(value)
         data = obj._data
         attr = self.attr
