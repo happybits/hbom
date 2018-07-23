@@ -98,6 +98,21 @@ class TestRedisDefinitionPersistence(unittest.TestCase):
 
         pipe.execute()
 
+        s = Sample.new(id='abc', b=7.123, req='hello world')
+        Sample.save(s)
+        s = Sample.get('abc')
+        self.assertEqual(s.b, 7)
+        s = Sample.new(id='123', a=75, b='7.123', req='hi mom')
+        Sample.save(s)
+        s = Sample.get('123')
+        self.assertEqual(s.b, 7)
+        self.assertEqual(s.a, 75)
+        s.b = '8.456'
+        Sample.save(s)
+        s = Sample.get('123')
+        self.assertEqual(s.b, 8)
+        self.assertEqual(s.a, 75)
+
 
 class ColdStorageMock(dict):
 

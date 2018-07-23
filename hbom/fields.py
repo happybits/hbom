@@ -88,7 +88,7 @@ class Field(object):
 
         return False
 
-    def validate(self, value):
+    def validate(self, value, from_persistence=False):
         if value is None:
             if self.required:
                 raise InvalidFieldValue('%s.%s is required' %
@@ -100,6 +100,12 @@ class Field(object):
 
         if self._is_allowed(value):
             return
+        elif not from_persistence:
+            try:
+                val = self.from_persistence(value)
+                return self.validate(val, True)
+            except (ValueError, TypeError) as e:
+                raise InvalidFieldValue(*e.args)
 
         raise InvalidFieldValue("%s.%s has type %r but must be of type %r" % (
             self.model, self.attr, type(value), allowed))
@@ -209,9 +215,6 @@ class BooleanField(Field):
     def to_persistence(self, obj):
         return '1' if obj else None
 
-    def from_persistence(self, obj):
-        return bool(obj)
-
 
 class DecimalField(Field):
     """
@@ -236,9 +239,6 @@ class DecimalField(Field):
             default:
         """
         super(DecimalField, self).__init__(required=required, default=default)
-
-    def from_persistence(self, value):
-        return Decimal(value)
 
     def to_persistence(self, value):
         return str(value)
@@ -271,6 +271,12 @@ class IntegerField(Field):
             col = Integer()
     """
     _allowed = int
+
+    def to_persistence(self, value):
+        return int(float(value))
+
+    def from_persistence(self, value):
+        return int(float(value))
 
 
 class JsonField(Field):
