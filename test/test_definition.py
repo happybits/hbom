@@ -44,7 +44,7 @@ class TestModel(unittest.TestCase):
 
         self.assertEqual(set(add.keys()), set(expected.keys()))
         for attr in expected:
-            self.assertEqual(add[attr], str(expected[attr]))
+            self.assertEqual(add[attr], expected[attr])
 
         self.assertEqual(remove, [])
         self.assertEqual(len(c), 4)
@@ -58,7 +58,7 @@ class TestModel(unittest.TestCase):
         add = {k: v for k, v in c.items() if v is not None}
         remove = [k for k, v in c.items() if v is None]
 
-        self.assertEqual(add, {'a': '3'})
+        self.assertEqual(add, {'a': 3})
         self.assertEqual(remove, ['b'])
         self.assertEqual(len(c), 2)
 
