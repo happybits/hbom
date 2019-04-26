@@ -1385,11 +1385,13 @@ class RedisObject(object):
             def prep(pk):
                 ref = definition(_ref=pk, _parent=cls)
                 s = storage(pk, pipe=p)
-                r = s.hmget(fields)
+                r = s.hgetall()
 
                 def set_data():
-                    if any(v is not None for v in r.result):
-                        ref.load_(r.result)
+                    data = r.result
+                    result = {k: data.get(k, None) for k in fields}
+                    if any(v is not None for v in result.values()):
+                        ref.load_(result)
                     else:
                         setattr(ref, '_new', True)
 
