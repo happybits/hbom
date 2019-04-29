@@ -1389,8 +1389,8 @@ class RedisObject(object):
 
                 def set_data():
                     data = r.result
-                    result = {k: data.get(k, None) for k in fields}
-                    if any(v is not None for v in result.values()):
+                    result = [data.get(k, None) for k in fields]
+                    if any(v is not None for v in result):
                         ref.load_(result)
                     else:
                         setattr(ref, '_new', True)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+# -*- coding: utf-8 -*-
 # std-lib
 from builtins import range
 import time
@@ -25,7 +25,7 @@ class TTSave(hbom.RedisObject):
         id = hbom.StringField(primary=True, default=generate_uuid)
         a = hbom.IntegerField()
         b = hbom.IntegerField(default=7)
-        req = hbom.StringField(required=True)
+        req = hbom.TextField(required=True)
         created_at = hbom.FloatField(default=time.time)
 
     class storage(hbom.RedisHash):
@@ -42,8 +42,10 @@ class TestSave(unittest.TestCase):
         clear_redis_testdata()
 
     def test_save(self):
-        x = TTSave.new(a=1, b=2, req='test')
+        x = TTSave.new(a=1, b=2, req=u'💡')
         TTSave.save(x)
+        y = TTSave.get(x.id)
+        self.assertEqual(y.req, u'💡')
 
     def test_change(self):
         x = TTSave.new(a=1, b=2, req='test')

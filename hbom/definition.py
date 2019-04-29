@@ -95,11 +95,11 @@ class Definition(with_metaclass(DefinitionMeta, object)):
             if data.count(None) == len(data):
                 data = None
             else:
-                data = {field: data[i] if data[i] is None
-                        else self._fields[field].from_persistence(data[i])
-                        for i, field in enumerate(self._fields)}
+                data = {field: data[i] for i, field in enumerate(self._fields)}
         if data:
-            self.__init__(_loading=True, **data)
+            self.__init__(_loading=True,
+                          **{k: None if v is None else self._fields[k].from_persistence(v)
+                             for k, v in data.items()})
 
     def primary_key(self):
         return getattr(self, self.__class__._pkey)
