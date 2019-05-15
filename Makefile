@@ -44,7 +44,7 @@ sdist: cleanmeta
 	python setup.py sdist
 
 bdist: cleanmeta
-	python setup.py bdist_egg
+	python setup.py bdist_wheel
 
 install:
 	python setup.py install

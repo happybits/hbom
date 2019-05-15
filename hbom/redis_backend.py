@@ -5,6 +5,7 @@ from builtins import object
 import hashlib
 import re
 import redpipe
+import redis.exceptions
 
 # 3rd-party (optional)
 try:
@@ -1440,6 +1441,9 @@ class RedisObject(object):
 
 
 class RedisColdStorageObject(RedisObject):
+
+    MYSQL_BLOB_LENGTH = 65535
+
     @classmethod
     def delete(cls, _pk, pipe=None):
         res = super(RedisColdStorageObject, cls).delete(_pk, pipe=pipe)
@@ -1460,6 +1464,55 @@ class RedisColdStorageObject(RedisObject):
 
         """
         return False
+
+    @classmethod
+    def _coldstorage_value_is_at_limit(cls, v):
+        """
+        This is to protect us against a bug we introduced when
+        we used mysql blob field for cold storage and it silently truncated
+        content longer than 65k. In those rare cases the content is
+        corrupted and lost forever.
+        """
+        return len(v) >= cls.MYSQL_BLOB_LENGTH
+
+    @classmethod
+    def _load_from_cold_storage_dump(cls, k, v, pipe):
+        storage = getattr(cls, 'storage')
+        fields = getattr(getattr(cls, 'definition'), '_fields')
+        try:
+            # if we use the pipe passed in, the try/catch does nothing.
+            # but if the value is over the limit for mysql blob fields
+            # we do it outside of the pipe.
+            # This should be rare enough that we can take the perf hit.
+            # and it will almost certainly be the case that the content
+            # is corrupt anyway so we want to trap that exception in a
+            # way that lets us handle it and remove the data from
+            # cold storage.
+            with Pipeline(autoexec=True,
+                          pipe=None if cls._coldstorage_value_is_at_limit(
+                              v) else pipe) as p:
+                s = storage(k, pipe=p)
+                s.persist()
+                s.restore(v)
+                return s.hmget(fields)
+        except redis.exceptions.ResponseError as e:
+            errstr = str(e)
+            if 'ERR DUMP' not in errstr or 'checksum' not in errstr:
+                raise
+            # only do this if somehow the checksum is corrupt.
+            response = redpipe.Future()
+            response.set(None)
+            return response
+
+    @classmethod
+    def _no_load_from_cold_storage_dump(cls, k, pipe):
+        storage = getattr(cls, 'storage')
+        s = storage(k)
+        storage_name = getattr(storage, '_db')
+        freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
+        with Pipeline(name=storage_name, autoexec=True, pipe=pipe) as p:
+            p.set('%s__xx' % s.key, '1')
+            p.expire('%s__xx' % s.key, freeze_ttl - 1)
 
     @classmethod
     def get_multi(cls, _pks, pipe=None):
@@ -1488,25 +1541,13 @@ class RedisColdStorageObject(RedisObject):
                          if v is not None}
 
                 with Pipeline(name=storage_name, autoexec=True) as pp:
-                    definition = getattr(cls, 'definition')
-                    fields = getattr(definition, '_fields')
-                    freeze_ttl = getattr(cls, 'freeze_ttl', FREEZE_TTL_DEFAULT)
+                    found = {k: cls._load_from_cold_storage_dump(k, v, pipe=pp)
+                             for k, v in found.items()}
 
-                    def _load(k, v):
-                        s = storage(k, pipe=pp)
-                        s.persist()
-                        s.restore(v)
-                        return s.hmget(fields)
-
-                    def _no_load(k):
-                        pp.set('%s__xx' % s.key, '1')
-                        pp.expire('%s__xx' % s.key, freeze_ttl - 1)
-
-                    found = {k: _load(k, v) for k, v in found.items()}
                     for k in missing:
                         if k in found:
                             continue
-                        _no_load(k)
+                        cls._no_load_from_cold_storage_dump(k, pipe=pp)
 
                 for ref in refs:
                     if ref.exists() or ref.primary_key() not in missing:

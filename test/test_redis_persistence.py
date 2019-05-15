@@ -4,6 +4,8 @@
 import time
 import unittest
 import re
+import random
+from string import ascii_letters
 
 # test harness
 from unit_test_setup import generate_uuid
@@ -141,6 +143,11 @@ class ColdStorageMock(dict):
             yield k
 
 
+class ColdStorageMockSilentTruncate(ColdStorageMock):
+    def set(self, k, v):
+        self[k] = v[0:hbom.RedisColdStorageObject.MYSQL_BLOB_LENGTH]
+
+
 class Foo(hbom.RedisColdStorageObject):
 
     class definition(hbom.Definition):
@@ -155,6 +162,18 @@ class Foo(hbom.RedisColdStorageObject):
 
     coldstorage = ColdStorageMock()
 
+    is_hot_key = re.compile(r'^[0-9]+\.[A-Za-z0-9\-\._]+$').match
+
+class SilentTruncate(hbom.RedisColdStorageObject):
+    class definition(hbom.Definition):
+        id = hbom.StringField(primary=True, default=generate_uuid)
+        body = hbom.TextField()
+
+    class storage(hbom.RedisHash):
+        _keyspace = 'SilentTruncate'
+        _db = 'test'
+
+    coldstorage = ColdStorageMockSilentTruncate()
     is_hot_key = re.compile(r'^[0-9]+\.[A-Za-z0-9\-\._]+$').match
 
 
@@ -206,6 +225,16 @@ class TestRedisColdStorage(unittest.TestCase):
         self.assertIsNone(Foo.coldstorage.get('x'))
         self.assertIsNotNone(Foo.coldstorage.get('y'))
 
+    def test_missing_cold_keys(self):
+        self.assertFalse(Foo.is_hot_key('a'))
+        self.assertFalse(Foo.is_hot_key('b'))
+
+        for o in Foo.get_multi(['a', 'b']):
+           self.assertFalse(o.exists())
+        self.assertEqual(default_redis_connection.get('FOO{a}__xx'), '1')
+        self.assertEqual(default_redis_connection.get('FOO{b}__xx'), '1')
+
+
     def test_missing_cold_key(self):
         self.assertFalse(Foo.is_hot_key('a'))
 
@@ -242,6 +271,30 @@ class TestRedisColdStorage(unittest.TestCase):
         self.assertEqual(res, {})
         a = Foo.get('a')
         self.assertTrue(a.exists())
+
+class SilentTruncateBugTestCase(unittest.TestCase):
+    def setUp(self):
+        clear_redis_testdata()
+
+    def tearDown(self):
+        clear_redis_testdata()
+
+
+    def random_string(self, length=1):
+        return ''.join([random.choice(ascii_letters) for _ in range(length)])
+
+    def test(self):
+        with hbom.Pipeline(autoexec=True) as pipe:
+            x = SilentTruncate.definition(id='x')
+            x.body = self.random_string(hbom.RedisColdStorageObject.MYSQL_BLOB_LENGTH + 1)
+            SilentTruncate.save(x, pipe=pipe)
+
+        dump = SilentTruncate.storage('x').dump()
+        self.assertGreater(len(dump), hbom.RedisColdStorageObject.MYSQL_BLOB_LENGTH)
+        SilentTruncate.freeze('x')
+        SilentTruncate.storage('x').delete()
+        x = SilentTruncate.get('x')
+        self.assertFalse(x.exists())
 
 
 class TestMissingToSaveTestCase(unittest.TestCase):
