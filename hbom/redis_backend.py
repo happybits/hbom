@@ -3,8 +3,8 @@ from builtins import map
 from builtins import range
 from builtins import object
 import hashlib
-import re
 import redpipe
+import redpipe.keyspaces
 import redis.exceptions
 
 # 3rd-party (optional)
@@ -59,6 +59,16 @@ def _parse_values(values):
     return values
 
 
+REDPIPE_MAPPINGS = {
+    None: redpipe.keyspaces.Keyspace,
+    'string': redpipe.String,
+    'hash': redpipe.Hash,
+    'zset': redpipe.SortedSet,
+    'set': redpipe.Set,
+    'list': redpipe.List,
+}
+
+
 class RedisContainer(object):
     """
     Base class for all containers. This class should not
@@ -69,11 +79,36 @@ class RedisContainer(object):
     """
 
     _db = None
+    _core_type = None
+    _keyparse = redpipe.TextField
+    _valueparse = redpipe.TextField
 
     def __init__(self, key, pipe=None):
         self._key = key
         self.key = self.db_key(self._key)
         self._pipe = pipe
+        self.core = self._core(pipe=pipe)
+
+    @classmethod
+    def _core(cls, pipe=None):
+        coretype = REDPIPE_MAPPINGS[cls._core_type]
+
+        fields = getattr(cls, '_fields', None)
+        memberparse = getattr(cls, '_memberparse', None)
+
+        class Inner(coretype):
+            keyspace = getattr(cls, '_keyspace', cls.__name__)
+            connection = getattr(cls, '_db', None)
+            keyparse = cls._keyparse
+            valueparse = cls._valueparse
+
+        if fields:
+            Inner.fields = fields
+
+        if memberparse:
+            Inner.memberparse = memberparse
+
+        return Inner(pipe=pipe)
 
     @property
     def pipe(self):
@@ -100,123 +135,45 @@ class RedisContainer(object):
         return self._key
 
     def delete(self):
-        """
-        Remove the container from the redis storage
-        > s = Set('test')
-        > s.add('1')
-        1
-        > s.clear()
-        > s.members
-        set([])
-
-        """
-        with self.pipe as p:
-            return p.delete(self.key)
+        return self.core.delete(self._key)
 
     clear = delete
 
     def expire(self, time=None):
-        """
-        Allow the key to expire after ``time`` seconds.
-
-        > s = Set("test")
-        > s.add("1")
-        1
-        > s.set_expire(1)
-        > # from time import sleep
-        > # sleep(1)
-        > # s.members
-        # set([])
-        > s.clear()
-
-        :param time: time expressed in seconds.
-            If time is not specified,
-            then ``default_expire_time`` will be used.
-        :rtype: None
-        """
         if time is None:
             time = EXPIRE_DEFAULT
-        with self.pipe as p:
-            return p.expire(self.key, time)
+        return self.core.expire(self._key, time)
 
     set_expire = expire
 
     def exists(self):
-        with self.pipe as p:
-            return p.exists(self.key)
+        return self.core.exists(self._key)
 
     def eval(self, script, *args):
-        with self.pipe as p:
-            return p.eval(script, 1, self.key, *args)
+        return self.core.eval(script, 1, self._key, *args)
 
     def dump(self):
-        with self.pipe as p:
-            return p.dump(self.key)
+        return self.core.dump(self._key)
 
     def restore(self, data, pttl=0):
-        return self.eval(lua_restorenx, pttl, data)
+        return self.core.restorenx(self._key, data, pttl=pttl)
 
     def ttl(self):
-        with self.pipe as p:
-            return p.ttl(self.key)
+        return self.core.ttl(self._key)
 
     def persist(self):
-        with self.pipe as p:
-            return p.persist(self.key)
+        return self.core.persist(self._key)
 
     def object(self, subcommand):
         return self.eval(lua_object_info, subcommand)
 
     @classmethod
     def scan(cls, cursor=0, match=None, count=None):
-        """
-        Incrementally return lists of key names. Also return a cursor
-        indicating the scan position.
-
-        ``match`` allows for filtering the keys by pattern
-
-        ``count`` allows for hint the minimum number of returns
-        """
-        f = redpipe.Future()
-
-        if match is None:
-            match = '*'
-        match = "%s{%s}" % (cls._ks(), match)
-        pattern = re.compile(r'^%s{(.*)}$' % cls._ks())
-
-        with redpipe.pipeline(name=cls._db, autoexec=True) as pipe:
-
-            res = pipe.scan(cursor=cursor, match=match, count=count)
-            decode = redpipe.TextField.decode
-
-            def cb():
-                keys = []
-                for k in res[1]:
-                    k = decode(k)
-                    m = pattern.match(k)
-                    if m:
-                        keys.append(m.group(1))
-
-                f.set((res[0], keys))
-
-            pipe.on_execute(cb)
-            return f
+        return cls._core().scan(cursor=cursor, match=match, count=count)
 
     @classmethod
     def scan_iter(cls, match=None, count=None):
-        """
-        Make an iterator using the SCAN command so that the client doesn't
-        need to remember the cursor position.
-
-        ``match`` allows for filtering the keys by pattern
-
-        ``count`` allows for hint the minimum number of returns
-        """
-        cursor = '0'
-        while cursor != 0:
-            cursor, data = cls.scan(cursor=cursor, match=match, count=count)
-            for item in data:
-                yield item
+        return cls._core().scan_iter(match=match, count=count)
 
     @classmethod
     def ids(cls):
@@ -225,55 +182,28 @@ class RedisContainer(object):
 
 
 class RedisString(RedisContainer):
+    _core_type = 'string'
+
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
     def get(self):
-        """
-        set the value as a string in the key
-        """
-        with self.pipe as p:
-            return p.get(self.key)
+        return self.core.get(self._key)
 
     def set(self, value):
-        """
-        set the value as a string in the key
-        :param value:
-        """
-        with self.pipe as p:
-            return p.set(self.key, value)
+        return self.core.set(self._key, value)
 
     def incr(self):
-        """
-        increment the value for key by 1
-        """
-        with self.pipe as p:
-            return p.incr(self.key)
+        return self.core.incr(self._key)
 
     def incrby(self, value=1):
-        """
-        increment the value for key by value: int
-        :param value:
-        """
-        with self.pipe as p:
-            return p.incrby(self.key, value)
+        return self.core.incrby(self._key, value)
 
     def incrbyfloat(self, value=1.0):
-        """
-        increment the value for key by value: float
-        :param value:
-        """
-        with self.pipe as p:
-            return p.incrbyfloat(self.key, value)
+        return self.core.incrbyfloat(self._key, value)
 
     def setnx(self, value):
-        """
-        Set the value as a string in the key only if the key doesn't exist.
-        :param value:
-        :return:
-        """
-        with self.pipe as p:
-            return p.setnx(self.key, value)
+        return self.core.setnx(self._key, value)
 
 
 class RedisSet(RedisContainer):
@@ -282,105 +212,33 @@ class RedisSet(RedisContainer):
 
     This class represent a Set in redis.
     """
+    _core_type = 'set'
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
     def sadd(self, *values):
-        """
-        Add the specified members to the Set.
-
-        :param values: a list of values or a simple value.
-        :rtype: integer representing the number of value added to the set.
-
-        > s = Set("test")
-        > s.clear()
-        > s.add(["1", "2", "3"])
-        3
-        > s.add(["4"])
-        1
-        > print s
-        <Set 'test' set(['1', '3', '2', '4'])>
-        > s.clear()
-
-        """
-        with self.pipe as p:
-            return p.sadd(self.key, *_parse_values(values))
+        return self.core.sadd(self._key, *_parse_values(values))
 
     def srem(self, *values):
-        """
-        Remove the values from the Set if they are present.
-
-        :param values: a list of values or a simple value.
-        :rtype: boolean indicating if the values have been removed.
-
-        > s = Set("test")
-        > s.add(["1", "2", "3"])
-        3
-        > s.srem(["1", "3"])
-        2
-        > s.clear()
-
-        """
-        with self.pipe as p:
-            return p.srem(self.key, *_parse_values(values))
+        return self.core.srem(self._key, *_parse_values(values))
 
     def spop(self):
-        """
-        Remove and return (pop) a random element from the Set.
-
-        :rtype: String representing the value poped.
-
-        > s = Set("test")
-        > s.add("1")
-        1
-        > s.spop()
-        '1'
-        > s.members
-        set([])
-
-        """
-        with self.pipe as p:
-            return p.spop(self.key)
+        return self.core.spop(self._key)
 
     def all(self):
-        with self.pipe as p:
-            return p.smembers(self.key)
+        return self.core.smembers(self._key)
 
     members = property(all)
 
     def scard(self):
-        """
-        Returns the cardinality of the Set.
-
-        :rtype: String containing the cardinality.
-
-        """
-        with self.pipe as p:
-            return p.scard(self.key)
+        return self.core.scard(self._key)
 
     def sismember(self, value):
-        """
-        Return ``True`` if the provided value is in the ``Set``.
-        :param value:
-
-        """
-        with self.pipe as p:
-            return p.sismember(self.key, value)
+        return self.core.sismember(self._key, value)
 
     def srandmember(self):
-        """
-        Return a random member of the set.
-
-        > s = Set("test")
-        > s.add(['a', 'b', 'c'])
-        3
-        > s.srandmember() # doctest: +ELLIPSIS
-        '...'
-        > # 'a', 'b' or 'c'
-        """
-        with self.pipe as p:
-            return p.srandmember(self.key)
+        return self.core.srandmember(self._key)
 
     add = sadd
     pop = spop
@@ -391,195 +249,58 @@ class RedisList(RedisContainer):
     """
     This class represent a list object as seen in redis.
     """
+    _core_type = 'list'
 
     def all(self):
-        """
-        Returns all items in the list.
-        """
         return self.lrange(0, -1)
 
     members = property(all)
     """Return all items in the list."""
 
     def llen(self):
-        """
-        Returns the length of the list.
-        """
-        with self.pipe as p:
-            return p.llen(self.key)
+        return self.core.llen(self._key)
 
     def lrange(self, start, stop):
-        """
-        Returns a range of items.
-
-        :param start: integer representing the start index of the range
-        :param stop: integer representing the size of the list.
-
-        > l = List("test")
-        > l.push(['a', 'b', 'c', 'd'])
-        4L
-        > l.lrange(1, 2)
-        ['b', 'c']
-        > l.clear()
-
-        """
-        with self.pipe as p:
-            return p.lrange(self.key, start, stop)
+        return self.core.lrange(self._key, start, stop)
 
     def lpush(self, *values):
-        """
-        Push the value into the list from the *left* side
-
-        :param values: a list of values or single value to push
-        :rtype: long representing the number of values pushed.
-
-        > l = List("test")
-        > l.lpush(['a', 'b'])
-        2L
-        > l.clear()
-        """
-        with self.pipe as p:
-            return p.lpush(self.key, *_parse_values(values))
+        return self.core.lpush(self._key, *_parse_values(values))
 
     def rpush(self, *values):
-        """
-        Push the value into the list from the *right* side
-
-        :param values: a list of values or single value to push
-        :rtype: long representing the size of the list.
-
-        > l = List("test")
-        > l.lpush(['a', 'b'])
-        2L
-        > l.rpush(['c', 'd'])
-        4L
-        > l.members
-        ['b', 'a', 'c', 'd']
-        > l.clear()
-        """
-        with self.pipe as p:
-            return p.rpush(self.key, *_parse_values(values))
+        return self.core.rpush(self._key, *_parse_values(values))
 
     def extend(self, iterable):
-        """
-        Extend list by appending elements from the iterable.
-
-        :param iterable: an iterable objects.
-        """
         self.rpush(*[e for e in iterable])
 
     def count(self, value):
-        """
-        Return number of occurrences of value.
-
-        :param value: a value tha *may* be contained in the list
-        """
         return self.members.count(value)
 
     def lpop(self):
-        """
-        Pop the first object from the left.
-
-        :return: the popped value.
-
-        """
-        with self.pipe as p:
-            return p.lpop(self.key)
+        return self.core.lpop(self._key)
 
     def rpop(self):
-        """
-        Pop the first object from the right.
-
-        :return: the popped value.
-        """
-        with self.pipe as p:
-            return p.rpop(self.key)
+        return self.core.rpop(self._key)
 
     def rpoplpush(self, key):
-        """
-        Remove an element from the list,
-        atomically add it to the head of the list indicated by key
-
-        :param key: the key of the list receiving the popped value.
-        :return: the popped (and pushed) value
-
-        > l = List('list1')
-        > l.push(['a', 'b', 'c'])
-        3L
-        > l.rpoplpush('list2')
-        'c'
-        > l2 = List('list2')
-        > l2.members
-        ['c']
-        > l.clear()
-        > l2.clear()
-        """
-        with self.pipe as p:
-            return p.rpoplpush(self.key, key)
+        return self.core.rpoplpush(self._key, key)
 
     def lrem(self, value, num=1):
-        """
-        Remove first occurrence of value.
-        :param num:
-        :param value:
-        :return: 1 if the value has been removed, 0 otherwise
-        if you see an error here, did you use redis.StrictRedis()?
-        """
-        with self.pipe as p:
-            return p.lrem(self.key, num, value)
+        return self.core.lrem(self._key, value=value, num=num)
 
     def reverse(self):
-        """
-        Reverse the list in place.
-
-        :return: None
-        """
         r = self.members[:]
         r.reverse()
         self.clear()
         self.extend(r)
 
     def ltrim(self, start, end):
-        """
-        Trim the list from start to end.
-
-        :param start:
-        :param end:
-        :return: None
-        """
-        with self.pipe as p:
-            return p.ltrim(self.key, start, end)
+        return self.core.ltrim(self._key, start, end)
 
     def lindex(self, idx):
-        """
-        Return the value at the index *idx*
-
-        :param idx: the index to fetch the value.
-        :return: the value or None if out of range.
-        """
-        with self.pipe as p:
-            return p.lindex(self.key, idx)
+        return self.core.lindex(self._key, idx)
 
     def lset(self, idx, value=0):
-        """
-        Set the value in the list at index *idx*
-
-        :param value:
-        :param idx:
-        :return: True is the operation succeed.
-
-        > l = List('test')
-        > l.push(['a', 'b', 'c'])
-        3L
-        > l.lset(0, 'e')
-        True
-        > l.members
-        ['e', 'b', 'c']
-        > l.clear()
-
-        """
-        with self.pipe as p:
-            return p.lset(self.key, idx, value)
+        return self.core.lset(self._key, idx, value)
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
@@ -601,59 +322,30 @@ class RedisSortedSet(RedisContainer):
     Use it if you want to arrange your set in any order.
 
     """
+    _core_type = 'zset'
 
     @property
     def members(self):
-        """
-        Returns the members of the set.
-        """
         return self.zrange(0, -1)
 
     @property
     def revmembers(self):
-        """
-        Returns the members of the set in reverse.
-        """
         return self.zrevrange(0, -1)
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
     def lt(self, v, limit=None, offset=None):
-        """
-        Returns the list of the members of the set that have scores
-        less than v.
-
-        :param v: the score to compare to.
-        :param limit: limit the result to *n* elements
-        :param offset: Skip the first *n* elements
-        """
         if limit is not None and offset is None:
             offset = 0
         return self.zrangebyscore("-inf", "(%f" % v, start=offset, num=limit)
 
     def le(self, v, limit=None, offset=None):
-        """
-        Returns the list of the members of the set that have scores
-        less than or equal to v.
-
-        :param v: the score to compare to.
-        :param limit: limit the result to *n* elements
-        :param offset: Skip the first *n* elements
-
-        """
         if limit is not None and offset is None:
             offset = 0
         return self.zrangebyscore("-inf", v, start=offset, num=limit)
 
     def gt(self, v, limit=None, offset=None, withscores=False):
-        """Returns the list of the members of the set that have scores
-        greater than v.
-        :param withscores:
-        :param offset:
-        :param limit:
-        :param v:
-        """
         if limit is not None and offset is None:
             offset = 0
         return self.zrangebyscore(
@@ -663,15 +355,6 @@ class RedisSortedSet(RedisContainer):
             withscores=withscores)
 
     def ge(self, v, limit=None, offset=None, withscores=False):
-        """Returns the list of the members of the set that have scores
-        greater than or equal to v.
-
-        :param withscores:
-        :param v: the score to compare to.
-        :param limit: limit the result to *n* elements
-        :param offset: Skip the first *n* elements
-
-        """
         if limit is not None and offset is None:
             offset = 0
         return self.zrangebyscore(
@@ -681,330 +364,55 @@ class RedisSortedSet(RedisContainer):
             withscores=withscores)
 
     def between(self, low, high, limit=None, offset=None):
-        """
-        Returns the list of the members of the set that have scores
-        between min and max.
-
-        .. Note::
-            The min and max are inclusive when comparing the values.
-
-        :param low: the minimum score to compare to.
-        :param high: the maximum score to compare to.
-        :param limit: limit the result to *n* elements
-        :param offset: Skip the first *n* elements
-
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.add('b', 20)
-        1
-        > s.add('c', 30)
-        1
-        > s.between(20, 30)
-        ['b', 'c']
-        > s.clear()
-        """
         if limit is not None and offset is None:
             offset = 0
         return self.zrangebyscore(low, high, start=offset, num=limit)
 
     def zadd(self, members, score=1, nx=False, xx=False, ch=False, incr=False):
-        """
-        Add members in the set and assign them the score.
-
-        :param members: a list of item or a single item
-        :param score: the score the assign to the item(s)
-
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.add('b', 20)
-        1
-        > s.clear()
-        """
-
-        if nx:
-            _args = ['NX']
-        elif xx:
-            _args = ['XX']
-        else:
-            _args = []
-
-        if ch:
-            _args.append('CH')
-
-        if incr:
-            _args.append('INCR')
-
-        if isinstance(members, dict):
-            for member, score in members.items():
-                _args += [score, member]
-        else:
-            _args += [score, members]
-
-        if nx and xx:
-            raise RedisError('cannot specify nx and xx at the same time')
-        with self.pipe as p:
-            return p.execute_command('ZADD', self.key, *_args)
+        return self.core.zadd(self._key, members, score=score, nx=nx, xx=xx, ch=ch, incr=incr)
 
     def zrem(self, *values):
-        """
-        Remove the values from the SortedSet
-
-        :param values:
-        :return: True if **at least one** value is successfully
-                 removed, False otherwise
-
-        > s = SortedSet('foo')
-        > s.add('a', 10)
-        1
-        > s.zrem('a')
-        1
-        > s.members
-        []
-        > s.clear()
-        """
-        with self.pipe as p:
-            return p.zrem(self.key, *_parse_values(values))
+        return self.core.zrem(self._key, *_parse_values(values))
 
     def zincrby(self, att, value=1):
-        """
-        Increment the score of the item by ``value``
-
-        :param att: the member to increment
-        :param value: the value to add to the current score
-        :returns: the new score of the member
-
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.zincrby("a", 10)
-        20.0
-        > s.clear()
-        """
-        with self.pipe as p:
-            return p.zincrby(self.key, att, value)
+        return self.core.zincrby(self._key, value=att, amount=value)
 
     def zrevrank(self, member):
-        """
-        Returns the ranking in reverse order for the member
-
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.add('b', 20)
-        1
-        > s.revrank('a')
-        1
-        > s.clear()
-        :param member:
-        """
-        with self.pipe as p:
-            return p.zrevrank(self.key, member)
+        return self.core.zrevrank(self._key, member)
 
     def zrange(self, start, end, **kwargs):
-        """
-        Returns all the elements including between ``start`` (non included) and
-        ``stop`` (included).
-
-        :param kwargs:
-        :param end:
-        :param start:
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.add('b', 20)
-        1
-        > s.add('c', 30)
-        1
-        > s.zrange(1, 3)
-        ['b', 'c']
-        > s.zrange(1, 3, withscores=True)
-        [('b', 20.0), ('c', 30.0)]
-        > s.clear()
-        """
-        with self.pipe as p:
-            return p.zrange(self.key, start, end, **kwargs)
+        return self.core.zrange(self._key, start, end, **kwargs)
 
     def zrevrange(self, start, end, **kwargs):
-        """
-        Returns the range of items included between ``start`` and ``stop``
-        in reverse order (from high to low)
-
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.add('b', 20)
-        1
-        > s.add('c', 30)
-        1
-        > s.zrevrange(1, 2)
-        ['b', 'a']
-        > s.clear()
-        :param kwargs:
-        :param kwargs:
-        :param end:
-        :param start:
-        :param start:
-        """
-        with self.pipe as p:
-            return p.zrevrange(self.key, start, end, **kwargs)
+        return self.core.zrevrange(self._key, start, end, **kwargs)
 
     # noinspection PyShadowingBuiltins
     def zrangebyscore(self, min, max, **kwargs):
-        """
-        Returns the range of elements included between the scores (min and max)
-
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.add('b', 20)
-        1
-        > s.add('c', 30)
-        1
-        > s.zrangebyscore(20, 30)
-        ['b', 'c']
-        > s.clear()
-        :param min: int
-        :param max: int
-        :param kwargs: dict
-        """
-        with self.pipe as p:
-            return p.zrangebyscore(self.key, min, max, **kwargs)
+        return self.core.zrangebyscore(self._key, min, max, **kwargs)
 
     # noinspection PyShadowingBuiltins
     def zrevrangebyscore(self, max, min, **kwargs):
-        """
-        Returns the range of elements included between the scores (min and max)
-
-        > s = SortedSet("foo")
-        > s.add('a', 10)
-        1
-        > s.add('b', 20)
-        1
-        > s.add('c', 30)
-        1
-        > s.zrangebyscore(20, 20)
-        ['b']
-        > s.clear()
-        :param kwargs:
-        :param min:
-        :param max:
-        """
-        with self.pipe as p:
-            return p.zrevrangebyscore(self.key, max, min, **kwargs)
+        return self.core.zrevrangebyscore(self._key, max, min, **kwargs)
 
     def zcard(self):
-        """
-        Returns the cardinality of the SortedSet.
-
-        > s = SortedSet("foo")
-        > s.add("a", 1)
-        1
-        > s.add("b", 2)
-        1
-        > s.add("c", 3)
-        1
-        > s.zcard()
-        3
-        > s.clear()
-        """
-        with self.pipe as p:
-            return p.zcard(self.key)
+        return self.core.zcard(self._key)
 
     def zscore(self, elem):
-        """
-        Return the score of an element
-
-        > s = SortedSet("foo")
-        > s.add("a", 10)
-        1
-        > s.score("a")
-        10.0
-        > s.clear()
-        :param elem:
-        """
-        with self.pipe as p:
-            return p.zscore(self.key, elem)
+        return self.core.zscore(self._key, elem)
 
     def zremrangebyrank(self, start, stop):
-        """
-        Remove a range of element between the rank ``start`` and
-        ``stop`` both included.
-
-        :param stop:
-        :param start:
-        :return: the number of item deleted
-
-        > s = SortedSet("foo")
-        > s.add("a", 10)
-        1
-        > s.add("b", 20)
-        1
-        > s.add("c", 30)
-        1
-        > s.zremrangebyrank(1, 2)
-        2
-        > s.members
-        ['a']
-        > s.clear()
-        """
-        with self.pipe as p:
-            return p.zremrangebyrank(self.key, start, stop)
+        return self.core.zremrangebyrank(self._key, start, stop)
 
     def zremrangebyscore(self, min_value, max_value):
-        """
-        Remove a range of element by between score ``min_value`` and
-        ``max_value`` both included.
-
-        :param max_value:
-        :param min_value:
-        :returns: the number of items deleted.
-
-        > s = SortedSet("foo")
-        > s.add("a", 10)
-        1
-        > s.add("b", 20)
-        1
-        > s.add("c", 30)
-        1
-        > s.zremrangebyscore(10, 20)
-        2
-        > s.members
-        ['c']
-        > s.clear()
-        """
-        with self.pipe as p:
-            return p.zremrangebyscore(self.key, min_value, max_value)
+        return self.core.zremrangebyscore(self._key, min_value, max_value)
 
     def zrank(self, elem):
-        """
-        Returns the rank of the element.
-
-        > s = SortedSet("foo")
-        > s.add("a", 10)
-        1
-        > s.zrank("a")
-        0
-        > s.clear()
-        :param elem:
-        """
-        with self.pipe as p:
-            return p.zrank(self.key, elem)
+        return self.core.zrank(self._key, elem)
 
     def zcount(self, min, max):
-        """
-        Returns the number of elements in the sorted set at key ``name`` with
-        a score between ``min`` and ``max``.
-        """
-        with self.pipe as p:
-            return p.zcount(self.key, min, max)
+        return self.core.zcount(self._key, min, max)
 
     def eq(self, value):
-        """
-        Returns the elements that have ``value`` for score.
-        :param value:
-        """
         return self.zrangebyscore(value, value)
 
     revrank = zrevrank
@@ -1016,143 +424,56 @@ class RedisSortedSet(RedisContainer):
 
 
 class RedisHash(RedisContainer):
+    _core_type = 'hash'
+
+    # @classmethod
+    # def _core(cls, pipe=None):
+    #
+    #     class Inner(redpipe.Hash):
+    #         keyspace = getattr(cls, '_keyspace', cls.__name__)
+    #         connection = getattr(cls, '_db', None)
+    #         valueparse = redpipe.TextField
+    #
+    #     return Inner(pipe=pipe)
+
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
 
     def hlen(self):
-        """
-        Returns the number of elements in the Hash.
-        """
-        with self.pipe as p:
-            return p.hlen(self.key)
+        return self.core.hlen(self._key)
 
     def hset(self, member, value):
-        """
-        Set ``member`` in the Hash at ``value``.
-
-        :param value:
-        :param member:
-        :returns: 1 if member is a new field and the value has been
-                  stored, 0 if the field existed and the value has been
-                  updated.
-
-        > h = Hash("foo")
-        > h.hset("bar", "value")
-        1L
-        > h.clear()
-        """
-        with self.pipe as p:
-            return p.hset(self.key, member, value)
+        return self.core.hset(self._key, member, value)
 
     def hsetnx(self, member, value):
-        """
-        Set ``member`` in the Hash at ``value``.
-
-        :param value:
-        :param member:
-        :returns: 1 if member is a new field and the value has been
-                  stored, 0 if the field existed and the value has been
-                  updated.
-
-        > h = Hash("foo")
-        > h.hset("bar", "value")
-        1L
-        > h.clear()
-        """
-        with self.pipe as p:
-            return p.hsetnx(self.key, member, value)
+        return self.core.hsetnx(self._key, member, value)
 
     def hdel(self, *members):
-        """
-        Delete one or more hash field.
-
-        :param members: on or more fields to remove.
-        :return: the number of fields that were removed
-
-        > h = Hash("foo")
-        > h.hset("bar", "value")
-        1L
-        > h.hdel("bar")
-        1
-        > h.clear()
-        """
-        with self.pipe as p:
-            return p.hdel(self.key, *_parse_values(members))
+        return self.core.hdel(self._key, *_parse_values(members))
 
     def hkeys(self):
-        """
-        Returns all fields name in the Hash
-        """
-        with self.pipe as p:
-            return p.hkeys(self.key)
+        return self.core.hkeys(self._key)
 
     def hgetall(self):
-        """
-        Returns all the fields and values in the Hash.
-
-        :rtype: dict
-        """
-        with self.pipe as p:
-            return p.hgetall(self.key)
+        return self.core.hgetall(self._key)
 
     def hvals(self):
-        """
-        Returns all the values in the Hash
-
-        :rtype: list
-        """
-        with self.pipe as p:
-            return p.hvals(self.key)
+        return self.core.hvals(self._key)
 
     def hget(self, field):
-        """
-        Returns the value stored in the field, None if the field doesn't exist.
-        :param field:
-        """
-        with self.pipe as p:
-            return p.hget(self.key, field)
+        return self.core.hget(self._key, field)
 
     def hexists(self, field):
-        """
-        Returns ``True`` if the field exists, ``False`` otherwise.
-        :param field:
-        """
-        with self.pipe as p:
-            return p.hexists(self.key, field)
+        return self.core.hexists(self._key, field)
 
     def hincrby(self, field, increment=1):
-        """
-        Increment the value of the field.
-        :param increment:
-        :param field:
-        :returns: the value of the field after incrementation
-
-        > h = Hash("foo")
-        > h.hincrby("bar", 10)
-        10L
-        > h.hincrby("bar", 2)
-        12L
-        > h.clear()
-        """
-        with self.pipe as p:
-            return p.hincrby(self.key, field, increment)
+        return self.core.hincrby(self._key, field, increment)
 
     def hmget(self, fields):
-        """
-        Returns the values stored in the fields.
-        :param fields:
-        """
-        with self.pipe as p:
-            return p.hmget(self.key, fields)
+        return self.core.hmget(self._key, fields)
 
     def hmset(self, mapping):
-        """
-        Sets or updates the fields with their corresponding values.
-
-        :param mapping: a dict with keys and values
-        """
-        with self.pipe as p:
-            return p.hmset(self.key, mapping)
+        return self.core.hmset(self._key, mapping)
 
 
 class RedisDistributedHash(RedisContainer):
@@ -1307,20 +628,11 @@ class RedisIndex(RedisHash):
 
     @classmethod
     def all(cls):
-        keys = [cls.db_key(i) for i in range(0, cls.shard_count() - 1)]
-        for key in keys:
-            cursor = 0
-            while True:
-                with redpipe.pipeline(name=cls._db, autoexec=True) as pipe:
-                    res = pipe.hscan(key, cursor=cursor, count=500)
-
-                cursor, elements = res
-                if elements:
-                    for k, v in elements.items():
-                        yield k, v
-
-                if cursor == 0:
-                    break
+        shards = range(0, cls.shard_count() - 1)
+        core = cls._core()
+        for shard in shards:
+            for k, v in core.hscan_iter(shard):
+                    yield k, v
 
 
 class RedisObject(object):
@@ -1429,7 +741,7 @@ class RedisObject(object):
         definition = ref.__class__
         fields = getattr(definition, '_fields')
         s = getattr(cls, 'storage')(_pk, pipe=pipe)
-        r = s.hmget(fields)
+        r = s.hmget(fields.keys())
 
         def set_data():
             if any(v is not None for v in r.result):
@@ -1494,7 +806,7 @@ class RedisColdStorageObject(RedisObject):
                 s = storage(k, pipe=p)
                 s.persist()
                 s.restore(v)
-                return s.hmget(fields)
+                return s.hmget(fields.keys())
         except redis.exceptions.ResponseError as e:
             errstr = str(e)
             if 'ERR DUMP' not in errstr or 'checksum' not in errstr:
@@ -1576,7 +888,7 @@ class RedisColdStorageObject(RedisObject):
             with s.pipe as pp:
                 missing_cache = pp.exists(frozen_key_cache)
 
-        r = s.hmget(fields)
+        r = s.hmget(fields.keys())
 
         def set_data():
             if any(v is not None for v in r.result):

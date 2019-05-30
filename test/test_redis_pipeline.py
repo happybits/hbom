@@ -98,7 +98,7 @@ class TestPipeline(unittest.TestCase):
         pipe.execute()
 
         self.assertEqual(write_response, 1)
-        self.assertEqual(read_response, [('a', now)])
+        self.assertEqual(read_response, [['a', now]])
 
     def test_model_multi(self):
 
@@ -141,6 +141,7 @@ class TestPipeline(unittest.TestCase):
         bazz_ids = []
         quux_ids = []
         for i in range(1, 5):
+            i = "%s" % i
             o = Foo.new(a='test')
             o.a = o.primary_key()
             Foo.save(o)

@@ -273,7 +273,7 @@ class IntegerField(Field):
     _allowed = int
 
     def to_persistence(self, value):
-        return int(float(value))
+        return "%s" % int(float(value))
 
     def from_persistence(self, value):
         return int(float(value))
@@ -379,9 +379,9 @@ class TextField(Field):
     def to_persistence(self, value):
         try:
             coerced = unicode(value)
-            return coerced.encode('utf-8')
+            return coerced
         except (UnicodeError, TypeError):
             raise InvalidFieldValue('not ascii')
 
     def from_persistence(self, value):
-        return None if value is None else unicode(value.decode('utf-8'))
+        return None if value is None else unicode(value)
