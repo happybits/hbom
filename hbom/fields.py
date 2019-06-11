@@ -1,5 +1,4 @@
 from .compat import json
-from decimal import Decimal
 from .exceptions import InvalidFieldValue, \
     MissingField, InvalidOperation
 from future.utils import PY2
@@ -10,7 +9,6 @@ __all__ = '''
 Field
 IntegerField
 FloatField
-DecimalField
 StringField
 StringListField
 TextField
@@ -21,7 +19,7 @@ BooleanField
 
 unicode = unicode if PY2 else str
 
-_NUMERIC = (0, 0.0, Decimal('0'))
+_NUMERIC = (0, 0.0)
 
 NULL = object()
 
@@ -33,7 +31,7 @@ class Field(object):
     Field objects handle data conversion to/from strings, store metadata
     about indices, etc. Note that these are "heavy" fields, in that whenever
     data is read/written, it must go through descriptor processing. This is
-    primarily so that (for example) if you try to write a Decimal to a Float
+    primarily so that (for example) if you try to write a Dictionary to a Float
     field, you get an error the moment you try to do it, not some time later
     when you try to save the object (though saving can still cause an error
     during the conversion process).
@@ -216,34 +214,6 @@ class BooleanField(Field):
         return '1' if obj else None
 
 
-class DecimalField(Field):
-    """
-    A Decimal-only numeric field (converts ints/longs into Decimals
-    automatically). Attempts to assign Python float will fail.
-
-    All standard arguments supported.
-
-    Used via::
-
-        class MyModel(Model):
-            col = Decimal()
-    """
-    _allowed = Decimal
-
-    def __init__(self, required=False, default=NULL):
-        """
-        don't allow as primary key.
-        rounding errors.
-        Args:
-            required:
-            default:
-        """
-        super(DecimalField, self).__init__(required=required, default=default)
-
-    def to_persistence(self, value):
-        return str(value)
-
-
 class FloatField(Field):
     """
     Numeric field that supports integers and floats (values are turned into
@@ -273,7 +243,7 @@ class IntegerField(Field):
     _allowed = int
 
     def to_persistence(self, value):
-        return int(float(value))
+        return "%s" % int(float(value))
 
     def from_persistence(self, value):
         return int(float(value))
@@ -379,9 +349,9 @@ class TextField(Field):
     def to_persistence(self, value):
         try:
             coerced = unicode(value)
-            return coerced.encode('utf-8')
+            return coerced
         except (UnicodeError, TypeError):
             raise InvalidFieldValue('not ascii')
 
     def from_persistence(self, value):
-        return None if value is None else unicode(value.decode('utf-8'))
+        return None if value is None else unicode(value)

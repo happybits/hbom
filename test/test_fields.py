@@ -27,30 +27,6 @@ class TestBooleanField(unittest.TestCase):
         self.assertEqual(Test(pk=1, flag=1).flag, True)
 
 
-class TestDecimalField(unittest.TestCase):
-
-    def test_noargs(self):
-        assert(hbom.DecimalField())
-
-    def test_required(self):
-        assert(hbom.DecimalField(required=True))
-
-    def test_default(self):
-        assert(hbom.DecimalField(default=1))
-
-    def test_primary(self):
-        self.assertRaises(TypeError, lambda: hbom.DecimalField(primary=True))
-
-    def test(self):
-        class Test(hbom.Definition):
-            pk = hbom.IntegerField(primary=True)
-            flag = hbom.DecimalField()
-        t = Test(pk=1, flag=1.00001)
-        self.assertEqual(t.flag, 1.00001)
-        t = Test(**t.changes_())
-        self.assertEqual(t.flag, 1.00001)
-
-
 class TestFloatField(unittest.TestCase):
     def test_noargs(self):
         assert (hbom.FloatField())

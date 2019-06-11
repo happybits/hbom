@@ -1,14 +1,12 @@
 -r requirements.txt
 
-coverage >= 3.7.1
--e git://github.com/pytest-dev/pytest.git@master#egg=pytest
-testfixtures >= 4.0.1
-mock == 1.0.1
+coverage
+pytest
+testfixtures
+mock
 tox
 flake8
 line_profiler
 python-coveralls
-redis-py-cluster>=1.0.0
-Cython>=0.23.4
 redislite==3.0.271
 redis>=2.10.2
