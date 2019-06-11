@@ -98,7 +98,7 @@ class TestPipeline(unittest.TestCase):
         pipe.execute()
 
         self.assertEqual(write_response, 1)
-        self.assertEqual(read_response, [['a', now]])
+        self.assertEqual(read_response, [('a', now)])
 
     def test_model_multi(self):
 

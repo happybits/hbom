@@ -82,6 +82,7 @@ class RedisContainer(object):
     _core_type = None
     _keyparse = redpipe.TextField
     _valueparse = redpipe.TextField
+    _key_tpl = "%s{%s}"
 
     def __init__(self, key, pipe=None):
         self._key = key
@@ -97,8 +98,9 @@ class RedisContainer(object):
         memberparse = getattr(cls, '_memberparse', None)
 
         class Inner(coretype):
-            keyspace = getattr(cls, '_keyspace', cls.__name__)
-            connection = getattr(cls, '_db', None)
+            keyspace_template = cls._key_tpl
+            keyspace = cls._ks()
+            connection = cls._db
             keyparse = cls._keyparse
             valueparse = cls._valueparse
 
@@ -129,7 +131,7 @@ class RedisContainer(object):
 
     @classmethod
     def db_key(cls, key):
-        return '%s{%s}' % (cls._ks(), key)
+        return cls._key_tpl % (cls._ks(), key)
 
     def primary_key(self):
         return self._key
@@ -581,9 +583,7 @@ class RedisDistributedHash(RedisContainer):
 
 
 class RedisIndex(RedisHash):
-    @classmethod
-    def db_key(cls, shard):
-        return getattr(cls, '_key_tpl', cls.__name__ + ":%s:u") % shard
+    _key_tpl = "%s:%s:u:"
 
     @classmethod
     def shard(cls, key, pipe=None):
@@ -632,7 +632,7 @@ class RedisIndex(RedisHash):
         core = cls._core()
         for shard in shards:
             for k, v in core.hscan_iter(shard):
-                    yield k, v
+                yield k, v
 
 
 class RedisObject(object):
@@ -847,8 +847,8 @@ class RedisColdStorageObject(RedisObject):
                     if ref.result:
                         cold_keys.remove(pk)
 
-                missing = {r.primary_key() for r in refs if not r.exists() and
-                           r.primary_key() in cold_keys}
+                missing = {r.primary_key() for r in refs
+                           if not r.exists() and r.primary_key() in cold_keys}
                 found = {k: v for k, v in cold_storage.get_multi(missing).items()
                          if v is not None}
 

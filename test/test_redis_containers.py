@@ -235,33 +235,33 @@ class SortedSetTestCase(unittest.TestCase):
         self.assertEqual(zorted.zrange(0, -1), [])
         self.assertEqual(zorted.add('foo', 1), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 1.0]])
+                         [('foo', 1.0)])
         self.assertEqual(zorted.add('foo', 2, xx=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 2.0]])
+                         [('foo', 2.0)])
         self.assertEqual(zorted.add('foo', 3, xx=True, ch=True), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 3.0]])
+                         [('foo', 3.0)])
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 3.0]])
+                         [('foo', 3.0)])
         self.assertEqual(zorted.add('bar', 2, xx=True, ch=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 3.0]])
+                         [('foo', 3.0)])
 
     def test_nx(self):
         zorted = SortedSetModel("tnx")
         self.assertEqual(zorted.add('foo', 1, nx=True), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 1.0]])
+                         [('foo', 1.0)])
         self.assertEqual(zorted.add('foo', 2, nx=True, ch=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 1.0]])
+                         [('foo', 1.0)])
         self.assertEqual(zorted.add('bar', 2, nx=True, ch=True), 1)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 1.0], ['bar', 2.0]])
+                         [('foo', 1.0), ('bar', 2.0)])
         self.assertEqual(zorted.add('bar', 3, nx=True, ch=True), 0)
         self.assertEqual(zorted.zrange(0, -1, withscores=True),
-                         [['foo', 1.0], ['bar', 2.0]])
+                         [('foo', 1.0), ('bar', 2.0)])
 
     def test_pipelined_zadd_options(self):
         pipe = hbom.Pipeline()
@@ -272,7 +272,7 @@ class SortedSetTestCase(unittest.TestCase):
         zorted.zadd('bar', 1, xx=True)
         res = zorted.zrange(0, -1, withscores=True)
         pipe.execute()
-        self.assertEqual(res, [['foo', 2.0]])
+        self.assertEqual(res, [('foo', 2.0)])
 
 
 class HashModel(hbom.RedisHash):
