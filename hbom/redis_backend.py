@@ -915,7 +915,7 @@ class RedisColdStorageObject(RedisObject):
                     return
 
                 s.restore(frozen)
-                rr = s.hmget(fields)
+                rr = s.hmget(fields.keys())
                 p.on_execute(lambda: ref.load_(rr.result))
                 p.execute()
                 cold_storage.delete(_pk)

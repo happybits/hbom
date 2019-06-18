@@ -188,15 +188,15 @@ class SetTestCase(unittest.TestCase):
         s.srem('b')
         self.assertEqual('a', s.spop())
         s.sadd('a')
-        self.assert_('a' in s.members)
+        self.assertIn('a', s.members)
         s.sadd('b')
         self.assertEqual(2, s.scard())
-        self.assert_(s.sismember('a'))
+        self.assertTrue(s.sismember('a'))
         conn = default_redis_connection
         conn.sadd('other_set', 'a')
         conn.sadd('other_set', 'b')
         conn.sadd('other_set', 'c')
-        self.assert_(s.srandmember() in {'a', 'b'})
+        self.assertIn(s.srandmember(), {'a', 'b'})
 
 
 class SortedSetModel(hbom.RedisSortedSet):

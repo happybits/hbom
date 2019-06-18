@@ -4,7 +4,7 @@
 from builtins import range
 import time
 import unittest
-import os
+import redpipe
 
 # test harness
 from unit_test_setup import generate_uuid
@@ -31,6 +31,7 @@ class TTSave(hbom.RedisObject):
     class storage(hbom.RedisHash):
         _keyspace = 'TT_s'
         _db = 'test'
+        _valueparse = redpipe.TextField
 
 
 @skip_if_redis_disabled

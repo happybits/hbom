@@ -6,7 +6,6 @@ testfixtures
 mock
 tox
 flake8
-line_profiler
 python-coveralls
 redislite==3.0.271
 redis>=2.10.2
