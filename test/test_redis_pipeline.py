@@ -24,9 +24,8 @@ class Foo(hbom.RedisObject):
         id = hbom.StringField(primary=True, default=generate_uuid)
         a = hbom.StringField(required=True)
 
-    class storage(hbom.RedisHash):
-        _keyspace = 'TT_foo'
-        _db = 'test'
+    _keyspace = 'TT_foo'
+    _db = 'test'
 
 
 class Bar(hbom.RedisSortedSet):
@@ -36,9 +35,8 @@ class Bar(hbom.RedisSortedSet):
 
 
 class Bazz(hbom.RedisObject):
-    class storage(hbom.RedisHash):
-        _keyspace = 'TT_bazz'
-        _db = 'test'
+    _keyspace = 'TT_bazz'
+    _db = 'test'
 
     class definition(hbom.Definition):
         id = hbom.StringField(primary=True, default=generate_uuid)
@@ -46,9 +44,8 @@ class Bazz(hbom.RedisObject):
 
 
 class Quux(hbom.RedisObject):
-    class storage(hbom.RedisHash):
-        _keyspace = 'TT_quux'
-        _db = 'test_alt'
+    _keyspace = 'TT_quux'
+    _db = 'test_alt'
 
     class definition(hbom.Definition):
         id = hbom.StringField(primary=True, default=generate_uuid)
@@ -60,9 +57,8 @@ class Sample(hbom.RedisObject):
         a = hbom.StringField(primary=True, required=True)
         b = hbom.IntegerField()
 
-    class storage(hbom.RedisHash):
-        _keyspace = 'TT_sample'
-        _db = 'test'
+    _keyspace = 'TT_sample'
+    _db = 'test'
 
 
 @skip_if_redis_disabled

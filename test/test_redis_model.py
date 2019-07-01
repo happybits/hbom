@@ -28,10 +28,8 @@ class TTSave(hbom.RedisObject):
         req = hbom.TextField(required=True)
         created_at = hbom.FloatField(default=time.time)
 
-    class storage(hbom.RedisHash):
-        _keyspace = 'TT_s'
-        _db = 'test'
-        _valueparse = redpipe.TextField
+    _keyspace = 'TT_s'
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -67,9 +65,8 @@ class Demo(hbom.RedisObject):
     class definition(hbom.Definition):
         id = hbom.StringField(primary=True)
 
-    class storage(hbom.RedisHash):
-        _keyspace = 'TT_idTest'
-        _db = 'test'
+    _keyspace = 'TT_idTest'
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -97,9 +94,8 @@ class SampleModel(hbom.RedisObject):
         created_at = hbom.FloatField(default=time.time)
         req = hbom.StringField(required=True)
 
-    class storage(hbom.RedisHash):
-        _db = 'test'
-        _keyspace = 'SampleModel'
+    _db = 'test'
+    _keyspace = 'SampleModel'
 
 
 @skip_if_redis_disabled
@@ -143,6 +139,37 @@ class TestRead(unittest.TestCase):
         ids = self.initialize(ct=5)
         res = [x.id for x in SampleModel.get_multi(ids) if x.exists()]
         self.assertEqual(res, ids)
+
+
+
+class SLModel(hbom.RedisObject):
+    class definition(hbom.Definition):
+        id = hbom.StringField(primary=True, default=generate_uuid)
+        data = hbom.StringListField(default=lambda: [])
+
+    _db = 'test'
+    _keyspace = 'SLModel'
+
+
+class SLModelE(SLModel):
+    _keyspace = 'SLModelE'
+
+class SLModelEU(SLModelE):
+    _db = 'foo'
+
+class StringListModelTestCase(unittest.TestCase):
+    def setUp(self):
+        clear_redis_testdata()
+
+    def tearDown(self):
+        clear_redis_testdata()
+
+    def test(self):
+        m = SLModel.new()
+        SLModel.save(m)
+
+        m = SLModel.get(m.primary_key())
+        self.assertEqual(m.data, [])
 
 
 if __name__ == '__main__':

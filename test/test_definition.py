@@ -10,7 +10,7 @@ class SampleModel(hbom.Definition):
     a = hbom.IntegerField()
     b = hbom.IntegerField(default=7)
     req = hbom.StringField(required=True)
-    j = hbom.JsonField()
+    j = hbom.DictField()
 
 
 class TestModel(unittest.TestCase):
@@ -44,7 +44,7 @@ class TestModel(unittest.TestCase):
 
         self.assertEqual(set(add.keys()), set(expected.keys()))
         for attr in expected:
-            self.assertEqual(add[attr], "%s" % expected[attr])
+            self.assertEqual(add[attr], expected[attr])
 
         self.assertEqual(remove, [])
         self.assertEqual(len(c), 4)
@@ -58,7 +58,7 @@ class TestModel(unittest.TestCase):
         add = {k: v for k, v in c.items() if v is not None}
         remove = [k for k, v in c.items() if v is None]
 
-        self.assertEqual(add, {'a': "3"})
+        self.assertEqual(add, {'a': 3})
         self.assertEqual(remove, ['b'])
         self.assertEqual(len(c), 2)
 
@@ -85,7 +85,7 @@ class TestModel(unittest.TestCase):
 class TTDefault(hbom.Definition):
     id = hbom.StringField(primary=True, default=generate_uuid)
     foo = hbom.ListField(default=[])
-    bar = hbom.JsonField(default={})
+    bar = hbom.DictField(default={})
 
 
 class TestDefault(unittest.TestCase):
@@ -110,16 +110,12 @@ class TestModelWithStringListField(unittest.TestCase):
 
         return Sample
 
-    def test_with_string(self):
-        sample = self.sample(foo='test')
-        self.assertEqual(sample.foo, ['test'])
-
-    def test_with_csv(self):
-        sample = self.sample(foo='test,moo')
+    def test_with_array(self):
+        sample = self.sample(foo=['test', 'moo'])
         self.assertEqual(sample.foo, ['test', 'moo'])
 
-    def test_with_empty_string(self):
-        sample = self.sample(foo='')
+    def test_with_empty(self):
+        sample = self.sample(foo=None)
         self.assertEqual(sample.foo, None)
 
     def test_with_none(self):
@@ -137,13 +133,9 @@ class TestModelWithRequiredStringListField(unittest.TestCase):
 
         return Sample
 
-    def test_with_string(self):
-        sample = self.sample(foo='test')
+    def test_with_array(self):
+        sample = self.sample(foo=['test'])
         self.assertEqual(sample.foo, ['test'])
-
-    def test_with_csv(self):
-        sample = self.sample(foo='test,moo')
-        self.assertEqual(sample.foo, ['test', 'moo'])
 
     def test_with_empty_string(self):
         self.assertRaises(hbom.InvalidFieldValue, lambda: self.sample(foo=''))

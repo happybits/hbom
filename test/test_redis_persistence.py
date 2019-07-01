@@ -28,9 +28,8 @@ class Sample(hbom.RedisObject):
         req = hbom.StringField(required=True)
         created_at = hbom.FloatField(default=time.time)
 
-    class storage(hbom.RedisHash):
-        _keyspace = 'TT_s'
-        _db = 'test'
+    _keyspace = 'TT_s'
+    _db = 'test'
 
 
 @skip_if_redis_disabled
@@ -100,16 +99,16 @@ class TestRedisDefinitionPersistence(unittest.TestCase):
 
         pipe.execute()
 
-        s = Sample.new(id='abc', b=7.123, req='hello world')
+        s = Sample.new(id='abc', b=7, req='hello world')
         Sample.save(s)
         s = Sample.get('abc')
         self.assertEqual(s.b, 7)
-        s = Sample.new(id='123', a=75, b='7.123', req='hi mom')
+        s = Sample.new(id='123', a=75, b=7, req='hi mom')
         Sample.save(s)
         s = Sample.get('123')
         self.assertEqual(s.b, 7)
         self.assertEqual(s.a, 75)
-        s.b = '8.456'
+        s.b = 8
         Sample.save(s)
         s = Sample.get('123')
         self.assertEqual(s.b, 8)
@@ -156,9 +155,8 @@ class Foo(hbom.RedisColdStorageObject):
         b = hbom.IntegerField(default=7)
         created_at = hbom.FloatField(default=time.time)
 
-    class storage(hbom.RedisHash):
-        _keyspace = 'FOO'
-        _db = 'test'
+    _keyspace = 'FOO'
+    _db = 'test'
 
     coldstorage = ColdStorageMock()
 
@@ -169,9 +167,8 @@ class SilentTruncate(hbom.RedisColdStorageObject):
         id = hbom.StringField(primary=True, default=generate_uuid)
         body = hbom.TextField()
 
-    class storage(hbom.RedisHash):
-        _keyspace = 'SilentTruncate'
-        _db = 'test'
+    _keyspace = 'SilentTruncate'
+    _db = 'test'
 
     coldstorage = ColdStorageMockSilentTruncate()
     is_hot_key = re.compile(r'^[0-9]+\.[A-Za-z0-9\-\._]+$').match

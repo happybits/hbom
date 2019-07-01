@@ -98,7 +98,7 @@ class Definition(with_metaclass(DefinitionMeta, object)):
                 data = {field: data[i] for i, field in enumerate(self._fields)}
         if data:
             self.__init__(_loading=True,
-                          **{k: None if v is None else self._fields[k].from_persistence(v)
+                          **{k: v
                              for k, v in data.items()})
 
     def primary_key(self):
@@ -155,7 +155,7 @@ class Definition(with_metaclass(DefinitionMeta, object)):
             if delete or nv is None:
                 response[attr] = None
             else:
-                response[attr] = col.to_persistence(nv)
+                response[attr] = nv
 
         return response
 

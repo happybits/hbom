@@ -16,8 +16,7 @@ def xid():
 
 
 class Device(hbom.RedisObject):
-    class storage(hbom.RedisHash):
-        _keyspace = 'D'
+    _keyspace = 'D'
 
     class definition(hbom.Definition):
         device_id = hbom.StringField(primary=True, default=xid)

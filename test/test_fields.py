@@ -24,7 +24,7 @@ class TestBooleanField(unittest.TestCase):
             flag = hbom.BooleanField()
 
         self.assertEqual(Test(pk=1).flag, False)
-        self.assertEqual(Test(pk=1, flag=1).flag, True)
+        self.assertEqual(Test(pk=1, flag=True).flag, True)
 
 
 class TestFloatField(unittest.TestCase):
@@ -80,15 +80,15 @@ class TestTextField(unittest.TestCase):
         assert (hbom.TextField(primary=True))
 
 
-class TestJsonField(unittest.TestCase):
+class TestDictField(unittest.TestCase):
     def test_noargs(self):
-        assert (hbom.JsonField())
+        assert (hbom.DictField())
 
     def test_required(self):
-        assert (hbom.JsonField(required=True))
+        assert (hbom.DictField(required=True))
 
     def test_default(self):
-        assert (hbom.JsonField(default='a'))
+        assert (hbom.DictField(default='a'))
 
 
 class TestStringListField(unittest.TestCase):
@@ -108,7 +108,7 @@ class TestStringListField(unittest.TestCase):
 
         t = Test(pk='1')
         self.assertEqual(t.my_list, [])
-        self.assertEqual(t.changes_(), {'pk': '1', 'my_list': None})
+        self.assertEqual(t.changes_(), {'pk': '1', 'my_list': []})
 
         my_list = t.my_list
         t.my_list += [
@@ -126,7 +126,7 @@ class TestStringListField(unittest.TestCase):
 
         self.assertEqual(my_list, ['foo', 'bar', 'bazz'])
 
-        t = Test(_loading=True, pk='1', my_list='foo,bar')
+        t = Test(_loading=True, pk='1', my_list=['foo', 'bar'])
         self.assertEqual(t.my_list, ['foo', 'bar'])
         self.assertEqual(my_list, ['foo', 'bar', 'bazz'])
 

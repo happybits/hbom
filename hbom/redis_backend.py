@@ -6,6 +6,8 @@ import hashlib
 import redpipe
 import redpipe.keyspaces
 import redis.exceptions
+from six import add_metaclass
+
 
 # 3rd-party (optional)
 try:
@@ -27,7 +29,8 @@ from .pipeline import Pipeline
 
 __all__ = ['RedisContainer', 'RedisList', 'RedisIndex',
            'RedisString', 'RedisSet', 'RedisSortedSet', 'RedisHash',
-           'RedisDistributedHash', 'RedisObject', 'RedisColdStorageObject']
+           'RedisHashBinary', 'RedisDistributedHash', 'RedisObject',
+           'RedisColdStorageObject']
 
 EXPIRE_DEFAULT = 60
 FREEZE_TTL_DEFAULT = 300
@@ -59,16 +62,53 @@ def _parse_values(values):
     return values
 
 
-REDPIPE_MAPPINGS = {
-    None: redpipe.keyspaces.Keyspace,
-    'string': redpipe.String,
-    'hash': redpipe.Hash,
-    'zset': redpipe.SortedSet,
-    'set': redpipe.Set,
-    'list': redpipe.List,
-}
+class RedisContainerMeta(type):
+    _base_classes = ['RedisContainer']
+
+    def __new__(mcs, name, bases, d):
+        if name in mcs._base_classes and d.get('__module__', '') == mcs.__module__:
+            return type.__new__(mcs, name, bases, d)
+
+        def get_core_property(field, default=None):
+            prop = None
+            try:
+                prop = d[field]
+            except KeyError:
+                pass
+
+            if prop is not None:
+                return prop
+
+            for base in bases:
+                prop = getattr(base, field, None)
+                if prop is not None:
+                    return prop
+            return default
+
+        coretype = get_core_property('_core_type', redpipe.keyspaces.Keyspace)
+
+        fields = get_core_property('_fields')
+        memberparse = get_core_property('_memberparse', None)
+
+        class Inner(coretype):
+            keyspace_template = get_core_property('_key_tpl')
+            keyspace = get_core_property('_keyspace', name)
+            connection = get_core_property('_db')
+            keyparse = get_core_property('_keyparse')
+            valueparse = get_core_property('_valueparse')
+
+        if fields:
+            Inner.fields = fields
+
+        if memberparse:
+            Inner.memberparse = memberparse
+
+        d['_core'] = Inner
+
+        return type.__new__(mcs, name, bases, d)
 
 
+@add_metaclass(RedisContainerMeta)
 class RedisContainer(object):
     """
     Base class for all containers. This class should not
@@ -79,7 +119,7 @@ class RedisContainer(object):
     """
 
     _db = None
-    _core_type = None
+    _core_type = redpipe.keyspaces.Keyspace
     _keyparse = redpipe.TextField
     _valueparse = redpipe.TextField
     _key_tpl = "%s{%s}"
@@ -89,28 +129,6 @@ class RedisContainer(object):
         self.key = self.db_key(self._key)
         self._pipe = pipe
         self.core = self._core(pipe=pipe)
-
-    @classmethod
-    def _core(cls, pipe=None):
-        coretype = REDPIPE_MAPPINGS[cls._core_type]
-
-        fields = getattr(cls, '_fields', None)
-        memberparse = getattr(cls, '_memberparse', None)
-
-        class Inner(coretype):
-            keyspace_template = cls._key_tpl
-            keyspace = cls._ks()
-            connection = cls._db
-            keyparse = cls._keyparse
-            valueparse = cls._valueparse
-
-        if fields:
-            Inner.fields = fields
-
-        if memberparse:
-            Inner.memberparse = memberparse
-
-        return Inner(pipe=pipe)
 
     @property
     def pipe(self):
@@ -184,7 +202,7 @@ class RedisContainer(object):
 
 
 class RedisString(RedisContainer):
-    _core_type = 'string'
+    _core_type = redpipe.String
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
@@ -214,7 +232,7 @@ class RedisSet(RedisContainer):
 
     This class represent a Set in redis.
     """
-    _core_type = 'set'
+    _core_type = redpipe.Set
 
     def __repr__(self):
         return "<%s '%s'>" % (self.__class__.__name__, self.key)
@@ -251,7 +269,7 @@ class RedisList(RedisContainer):
     """
     This class represent a list object as seen in redis.
     """
-    _core_type = 'list'
+    _core_type = redpipe.List
 
     def all(self):
         return self.lrange(0, -1)
@@ -324,7 +342,7 @@ class RedisSortedSet(RedisContainer):
     Use it if you want to arrange your set in any order.
 
     """
-    _core_type = 'zset'
+    _core_type = redpipe.SortedSet
 
     @property
     def members(self):
@@ -426,7 +444,7 @@ class RedisSortedSet(RedisContainer):
 
 
 class RedisHash(RedisContainer):
-    _core_type = 'hash'
+    _core_type = redpipe.Hash
 
     # @classmethod
     # def _core(cls, pipe=None):
@@ -476,6 +494,10 @@ class RedisHash(RedisContainer):
 
     def hmset(self, mapping):
         return self.core.hmset(self._key, mapping)
+
+
+class RedisHashBinary(RedisHash):
+    _valueparse = redpipe.BinaryField
 
 
 class RedisDistributedHash(RedisContainer):
@@ -635,7 +657,56 @@ class RedisIndex(RedisHash):
                 yield k, v
 
 
+class classproperty(object):
+    def __init__(self, fget):
+        self.fget = fget
+
+    def __get__(self, owner_self, owner_cls):
+        return self.fget(owner_cls)
+
+
+class RedisObjectMeta(type):
+    base_classes = ['RedisObject', 'RedisColdStorageObject']
+
+    def __new__(mcs, name, bases, d):
+        if name in mcs.base_classes and d.get('__module__', '') == mcs.__module__:
+            return type.__new__(mcs, name, bases, d)
+
+        def get_core_property(field, default=None):
+            prop = None
+            try:
+                prop = d[field]
+            except KeyError:
+                pass
+
+            if prop is not None:
+                return prop
+
+            for base in bases:
+                prop = getattr(base, field, None)
+                if prop is not None:
+                    return prop
+            return default
+
+        definition = get_core_property('definition')
+
+        fields = {k: v._parser for k, v in
+                  getattr(definition, '_fields').items()}
+
+        class inner(RedisHash):
+            _db = get_core_property('_db')
+            _keyspace = get_core_property('_keyspace', name)
+            _valueparse = redpipe.BinaryField
+            _fields = fields
+
+        d['storage'] = inner
+
+        return type.__new__(mcs, name, bases, d)
+
+
+@add_metaclass(RedisObjectMeta)
 class RedisObject(object):
+
     @classmethod
     def save(cls, instance, pipe=None, full=False):
 
@@ -643,7 +714,7 @@ class RedisObject(object):
         # this allows us to use wrapper classes that
         # implement the same interface.
         if getattr(instance, '_fields') != getattr(
-                getattr(cls, 'definition'), '_fields'):
+                cls.definition, '_fields'):
             raise RuntimeError(
                 'incorrect instance type for %s:save' % cls.__name__)
 
@@ -653,7 +724,7 @@ class RedisObject(object):
             return 0
         p = Pipeline() if pipe is None else pipe
         _pk = instance.primary_key()
-        s = getattr(cls, 'storage')(_pk, pipe=p)
+        s = cls.storage(_pk, pipe=p)
 
         # apply remove to the record
         remove = [k for k, v in state.items() if v is None]
@@ -674,13 +745,45 @@ class RedisObject(object):
 
     @classmethod
     def delete(cls, _pk, pipe=None):
-        fields = getattr(getattr(cls, 'definition'), '_fields')
-        res = getattr(cls, 'storage')(_pk, pipe=pipe).hdel(*fields)
+        fields = getattr(cls.definition, '_fields')
+        res = cls.storage(_pk, pipe=pipe).hdel(*fields)
         return res
 
     @classmethod
+    def expire(cls, _pk, delay, pipe=None):
+        return cls.storage(_pk, pipe=pipe).expire(delay)
+
+    @classmethod
+    def ttl(cls, _pk, pipe=None):
+        return cls.storage(_pk, pipe=pipe).ttl()
+
+    @classmethod
+    def persist(cls, _pk, pipe=None):
+        return cls.storage(_pk, pipe=pipe).persist()
+
+    @classmethod
+    def get_field(cls, _pk, field, pipe=None):
+        return cls.storage(_pk, pipe=pipe).hget(field)
+
+    @classmethod
+    def set_field(cls, _pk, field, value, pipe=None):
+        return cls.storage(_pk, pipe=pipe).hset(field, value)
+
+    @classmethod
+    def delete_field(cls, _pk, field, pipe=None):
+        return cls.storage(_pk, pipe=pipe).hdel(field)
+
+    @classmethod
+    def incr_field(cls, _pk, field, incr=1, pipe=None):
+        return cls.storage(_pk, pipe=pipe).hincrby(field, incr)
+
+    @classmethod
+    def ids(cls):
+        return cls.storage.ids()
+
+    @classmethod
     def new(cls, **kwargs):
-        definition = getattr(cls, 'definition')
+        definition = cls.definition
         obj = definition(**kwargs)
         return obj
 
@@ -690,9 +793,9 @@ class RedisObject(object):
 
     @classmethod
     def get_multi(cls, _pks, pipe=None):
-        definition = getattr(cls, 'definition')
+        definition = cls.definition
         with Pipeline(pipe=pipe, autoexec=True) as p:
-            storage = getattr(cls, 'storage')
+            storage = cls.storage
             fields = getattr(definition, '_fields')
 
             def prep(pk):
@@ -720,7 +823,7 @@ class RedisObject(object):
         if pipe is not None:
             return cls.get(pk, pipe=pipe)
 
-        return getattr(cls, 'definition')(_ref=pk, _parent=cls)
+        return cls.definition(_ref=pk, _parent=cls)
 
     @classmethod
     def is_hot_key(cls, key):
@@ -740,7 +843,7 @@ class RedisObject(object):
         _pk = ref.primary_key()
         definition = ref.__class__
         fields = getattr(definition, '_fields')
-        s = getattr(cls, 'storage')(_pk, pipe=pipe)
+        s = cls.storage(_pk, pipe=pipe)
         r = s.hmget(fields.keys())
 
         def set_data():
@@ -760,7 +863,7 @@ class RedisColdStorageObject(RedisObject):
     def delete(cls, _pk, pipe=None):
         res = super(RedisColdStorageObject, cls).delete(_pk, pipe=pipe)
         # can we get away with not deleting from cold storage on hot key?
-        cold_storage = getattr(cls, 'coldstorage')
+        cold_storage = cls.coldstorage
         cold_storage.delete(_pk)
         return res
 
@@ -790,7 +893,7 @@ class RedisColdStorageObject(RedisObject):
     @classmethod
     def _load_from_cold_storage_dump(cls, k, v, pipe):
         storage = getattr(cls, 'storage')
-        fields = getattr(getattr(cls, 'definition'), '_fields')
+        fields = getattr(cls.definition, '_fields')
         try:
             # if we use the pipe passed in, the try/catch does nothing.
             # but if the value is over the limit for mysql blob fields
@@ -832,7 +935,7 @@ class RedisColdStorageObject(RedisObject):
         storage_name = getattr(storage, '_db')
         with Pipeline(pipe=pipe, name=storage_name, autoexec=True) as p:
 
-            cold_storage = getattr(cls, 'coldstorage')
+            cold_storage = cls.coldstorage
             cold_keys = {pk for pk in _pks if not cls.is_hot_key(pk)}
             missing_cache = {}
             for pk in cold_keys:
@@ -880,7 +983,7 @@ class RedisColdStorageObject(RedisObject):
         fields = getattr(definition, '_fields')
         storage = getattr(cls, 'storage')
         s = storage(_pk, pipe=pipe)
-        cold_storage = getattr(cls, 'coldstorage')
+        cold_storage = cls.coldstorage
         missing_cache = False
         frozen_key_cache = "%s__xx" % s.key
         if not cls.is_hot_key(_pk):
@@ -935,7 +1038,7 @@ class RedisColdStorageObject(RedisObject):
 
     @classmethod
     def freeze(cls, *ids):
-        cold_storage = getattr(cls, 'coldstorage')
+        cold_storage = cls.coldstorage
 
         ids = [k for k in ids if not cls.is_hot_key(k)]
 
@@ -972,7 +1075,7 @@ class RedisColdStorageObject(RedisObject):
 
     @classmethod
     def thaw(cls, *ids):
-        cold_storage = getattr(cls, 'coldstorage')
+        cold_storage = cls.coldstorage
         p = Pipeline()
         storage = getattr(cls, 'storage')
         for k, v in cold_storage.get_multi(ids).items():

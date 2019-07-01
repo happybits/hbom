@@ -3,7 +3,8 @@ from .exceptions import InvalidFieldValue, \
     MissingField, InvalidOperation
 from future.utils import PY2
 import future.builtins
-import re
+import redpipe
+
 
 __all__ = '''
 Field
@@ -12,14 +13,12 @@ FloatField
 StringField
 StringListField
 TextField
-JsonField
+DictField
 ListField
 BooleanField
 '''.split()
 
 unicode = unicode if PY2 else str
-
-_NUMERIC = (0, 0.0)
 
 NULL = object()
 
@@ -54,6 +53,7 @@ class Field(object):
           during object construction: ``MyModel(col=val)``
     """
     _allowed = ()
+    _parser = redpipe.TextField
 
     __slots__ = 'primary required default model convert attr'.split()
 
@@ -64,49 +64,36 @@ class Field(object):
         self.model = None
         self.attr = None
 
-    def from_persistence(self, value):
-        convert = self._allowed[0] if \
-            isinstance(self._allowed, (tuple, list)) else self._allowed
-        return convert(value)
-
-    def to_persistence(self, value):
-        if isinstance(value, int):
-            return str(value)
-        return repr(value)
+    @property
+    def _allowed_types(self):
+        return self._allowed if isinstance(self._allowed, (tuple, list)) else [self._allowed]
 
     def _is_allowed(self, value):
         if value is None:
             return True
-        allowed = self._allowed if \
-            isinstance(self._allowed, (tuple, list)) else [self._allowed]
 
-        for a in allowed:
+        for a in self._allowed_types:
             if isinstance(value, a):
                 return True
 
-        return False
+        try:
+            self._parser.encode(value)
+            return True
+        except redpipe.InvalidValue:
+            return False
 
-    def validate(self, value, from_persistence=False):
+    def validate(self, value):
         if value is None:
             if self.required:
                 raise InvalidFieldValue('%s.%s is required' %
                                         (self.model, self.attr))
             return
 
-        allowed = self._allowed if \
-            isinstance(self._allowed, (tuple, list)) else [self._allowed]
-
         if self._is_allowed(value):
             return
-        elif not from_persistence:
-            try:
-                val = self.from_persistence(value)
-                return self.validate(val, True)
-            except (ValueError, TypeError) as e:
-                raise InvalidFieldValue(*e.args)
 
         raise InvalidFieldValue("%s.%s has type %r but must be of type %r" % (
-            self.model, self.attr, type(value), allowed))
+            self.model, self.attr, type(value), self._allowed_types))
 
     def _init_(self, obj, value, loading):
         # You shouldn't be calling this directly, but this is what sets up all
@@ -127,10 +114,7 @@ class Field(object):
             else:
                 value = self.default
         elif not self._is_allowed(value):
-            try:
-                value = self.from_persistence(value)
-            except (ValueError, TypeError) as e:
-                raise InvalidFieldValue(*e.args)
+            raise InvalidFieldValue('value invalid')
 
         if not loading:
             self.validate(value)
@@ -175,183 +159,59 @@ class Field(object):
             raise InvalidOperation(
                 "%s.%s cannot be null" % (self.model, attr)
             )
-        try:
-            obj._data.pop(attr)
-            obj._dirty.add(attr)
-        except KeyError:
-            raise AttributeError(
-                "%s.%s does not exist" % (self.model, attr)
-            )
+        obj._data[attr] = None
+        obj._dirty.add(attr)
 
 
 class BooleanField(Field):
-    """
-    Used for boolean fields.
-
-    All standard arguments supported.
-
-    All values passed in on creation are casted via bool().
-    Originally thought we would want to distinguish between None and False
-    cases, but it actually gets messy and I think it is better as an on/off
-    switch.
-
-    Used via::
-
-        class MyModel(Model):
-            col = Boolean()
-
-    Queries via ``MyModel.get_by(...)`` and ``MyModel.query.filter(...)`` work
-    as expected when passed ``True`` or ``False``.
-
-    .. note: these fields are not sortable by default.
-    """
     _allowed = bool
+    _parser = redpipe.BooleanField
 
     def __init__(self):
         super(BooleanField, self).__init__(default=False)
 
-    def to_persistence(self, obj):
-        return '1' if obj else None
-
 
 class FloatField(Field):
-    """
-    Numeric field that supports integers and floats (values are turned into
-    floats on load from persistence).
-
-    All standard arguments supported.
-
-    Used via::
-
-        class MyModel(Model):
-            col = Float()
-    """
     _allowed = (float, int)
+    _parser = redpipe.FloatField
 
 
 class IntegerField(Field):
-    """
-    Used for integer numeric fields.
-
-    All standard arguments supported.
-
-    Used via::
-
-        class MyModel(Model):
-            col = Integer()
-    """
     _allowed = int
-
-    def to_persistence(self, value):
-        return "%s" % int(float(value))
-
-    def from_persistence(self, value):
-        return int(float(value))
+    _parser = redpipe.IntegerField
 
 
-class JsonField(Field):
-    """
-    Allows for more complicated nested structures as attributes.
-
-    Used via::
-
-        class MyModel(Model):
-            col = Json()
-    """
+class DictField(Field):
     _allowed = (dict, list, tuple, set)
-
-    def to_persistence(self, value):
-        return json.dumps(value)
-
-    def from_persistence(self, value):
-        if isinstance(value, self._allowed):
-            return value
-        return json.loads(value)
+    _parser = redpipe.DictField
 
 
-class ListField(JsonField):
+class ListField(Field):
     _allowed = list
-
-    def from_persistence(self, value):
-        if value is None:
-            return None
-        if isinstance(value, self._allowed):
-            return value
-        try:
-            return json.loads(value)
-        except (ValueError, TypeError) as e:
-            pass
-
-        try:
-            if len(value) > 0:
-                return value.split(',')
-            else:
-                return None
-        except (TypeError, AttributeError) as e:
-            raise InvalidFieldValue(*e.args)
+    _parser = redpipe.ListField
 
 
 class StringListField(ListField):
     _allowed = list
+    _parser = redpipe.StringListField
 
-    def to_persistence(self, value):
-        return ",".join(value) if len(value) > 0 else None
+    def __set__(self, obj, value):
+        if value is not None:
+            try:
+                value[:] = [v for v in value if v is not None]
+            except TypeError:
+                raise InvalidFieldValue('invalid list')
+
+            if not value:
+                value = None
+        return super(StringListField, self).__set__(obj, value)
 
 
 class StringField(Field):
-    """
-    A plain string field. Trying to save unicode strings will probably result
-    in an error, if not bad data.
-
-    All standard arguments supported.
-
-    Used via::
-
-        class MyModel(Model):
-            col = String()
-    """
     _allowed = _SCALAR
-    PATTERN = re.compile('^([ -~]+)?$')
-
-    def from_persistence(self, value):
-        return None if value is None else unicode(value.decode('utf-8'))
-
-    def to_persistence(self, value):
-        try:
-            coerced = unicode(value)
-            if coerced == value and self.PATTERN.match(coerced):
-                return coerced.encode('utf-8')
-        except (UnicodeError, TypeError):
-            pass
-
-        raise InvalidFieldValue('not ascii')
+    _parser = redpipe.AsciiField
 
 
 class TextField(Field):
-    """
-    A unicode string field.
-
-    All standard arguments supported, except for ``unique``.
-
-    Aside from not supporting ``unique`` indices, will generally have the same
-    behavior as a ``String`` field, only supporting unicode strings. Data is
-    encoded via utf-8 before writing to persistence. If you would like to
-    create your own field to encode/decode differently, examine the source
-    find out how to do it.
-
-    Used via::
-
-        class MyModel(Model):
-            col = Text()
-    """
     _allowed = [unicode, str]
-
-    def to_persistence(self, value):
-        try:
-            coerced = unicode(value)
-            return coerced
-        except (UnicodeError, TypeError):
-            raise InvalidFieldValue('not ascii')
-
-    def from_persistence(self, value):
-        return None if value is None else unicode(value)
+    _parser = redpipe.TextField
