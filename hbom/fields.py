@@ -1,10 +1,9 @@
 from .compat import json
 from .exceptions import InvalidFieldValue, \
     MissingField, InvalidOperation
-from future.utils import PY2
 import future.builtins
 import redpipe
-
+import six
 
 __all__ = '''
 Field
@@ -18,11 +17,10 @@ ListField
 BooleanField
 '''.split()
 
-unicode = unicode if PY2 else str
 
 NULL = object()
 
-_SCALAR = (str, unicode, future.builtins.str)
+_SCALAR = (str, six.text_type, future.builtins.str)
 
 
 class Field(object):
@@ -213,5 +211,5 @@ class StringField(Field):
 
 
 class TextField(Field):
-    _allowed = [unicode, str]
+    _allowed = [six.text_type, str]
     _parser = redpipe.TextField
