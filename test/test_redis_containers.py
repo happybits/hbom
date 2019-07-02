@@ -294,8 +294,8 @@ class HashTestCase(unittest.TestCase):
         h.hset('real_name', "Richard Rahl")
 
         pulled = default_redis_connection.hgetall(h.key)
-        self.assertEqual({'name': "Richard Cypher",
-                          'real_name': "Richard Rahl"}, pulled)
+        self.assertEqual({b'name': b"Richard Cypher",
+                          b'real_name': b"Richard Rahl"}, pulled)
 
         self.assertEqual(['name', 'real_name'], h.hkeys())
         self.assertEqual(["Richard Cypher", "Richard Rahl"],
@@ -303,7 +303,7 @@ class HashTestCase(unittest.TestCase):
 
         h.hdel('name')
         pulled = default_redis_connection.hgetall(h.key)
-        self.assertEqual({'real_name': "Richard Rahl"}, pulled)
+        self.assertEqual({b'real_name': b"Richard Rahl"}, pulled)
         self.assertTrue('real_name' in h.hgetall())
         h.dict = {"new_hash": "YEY"}
         self.assertEqual({"new_hash": "YEY"}, h.dict)
