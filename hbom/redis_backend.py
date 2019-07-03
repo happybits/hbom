@@ -843,7 +843,7 @@ class RedisObject(object):
         definition = ref.__class__
         fields = getattr(definition, '_fields')
         s = cls.storage(_pk, pipe=pipe)
-        r = s.hmget(list(fields.keys()))
+        r = s.hmget(fields.keys())
 
         def set_data():
             if any(v is not None for v in r.result):
@@ -908,7 +908,7 @@ class RedisColdStorageObject(RedisObject):
                 s = storage(k, pipe=p)
                 s.persist()
                 s.restore(v)
-                return s.hmget(list(fields.keys()))
+                return s.hmget(fields.keys())
         except redis.exceptions.ResponseError as e:
             errstr = str(e)
             if 'ERR DUMP' not in errstr or 'checksum' not in errstr:
@@ -990,7 +990,7 @@ class RedisColdStorageObject(RedisObject):
             with s.pipe as pp:
                 missing_cache = pp.exists(frozen_key_cache)
 
-        r = s.hmget(list(fields.keys()))
+        r = s.hmget(fields.keys())
 
         def set_data():
             if any(v is not None for v in r.result):
@@ -1017,7 +1017,7 @@ class RedisColdStorageObject(RedisObject):
                     return
 
                 s.restore(frozen)
-                rr = s.hmget(list(fields.keys()))
+                rr = s.hmget(fields.keys())
                 p.on_execute(lambda: ref.load_(rr.result))
                 p.execute()
                 cold_storage.delete(_pk)
