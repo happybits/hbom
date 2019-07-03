@@ -610,8 +610,7 @@ class RedisIndex(RedisHash):
     @classmethod
     def shard(cls, key, pipe=None):
         shard_ct = cls.shard_count()
-        # keyhash = hashlib.md5(key.encode('utf-8')).hexdigest()
-        keyhash = hashlib.md5(key).hexdigest()
+        keyhash = hashlib.md5(key.encode('utf-8')).hexdigest()
         return cls(int(keyhash, 16) % shard_ct, pipe=pipe)
 
     @classmethod
