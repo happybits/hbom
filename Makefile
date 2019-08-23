@@ -41,7 +41,8 @@ sdist: cleanmeta
 	python setup.py sdist
 
 bdist: cleanmeta
-	python setup.py bdist_wheel
+	python2 setup.py bdist_wheel
+	python3 setup.py bdist_wheel
 
 install:
 	python setup.py install
