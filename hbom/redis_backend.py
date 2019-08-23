@@ -605,7 +605,7 @@ class RedisDistributedHash(RedisContainer):
 
 
 class RedisIndex(RedisHash):
-    _key_tpl = "%s:%s:u:"
+    _key_tpl = "%s:%s:u"
 
     @classmethod
     def shard(cls, key, pipe=None):
