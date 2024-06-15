@@ -172,6 +172,9 @@ class RedisContainer(object):
     def eval(self, script, *args):
         return self.core.eval(script, 1, self._key, *args)
 
+    def evalsha(self, digest, *args):
+        return self.core.evalsha(digest, 1, self._key, *args)
+
     def dump(self):
         return self.core.dump(self._key)
 
