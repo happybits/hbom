@@ -1,2 +1,2 @@
-redpipe>=2.3.7
+redpipe>=4.0.1
 future
