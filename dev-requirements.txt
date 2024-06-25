@@ -7,5 +7,5 @@ mock
 tox
 flake8
 python-coveralls
-redislite==6.0.674960
-redis>=2.10.2
+redislite==6.2.912183
+redis>=4.1.0
