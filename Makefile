@@ -55,7 +55,6 @@ test:
 tox:
 	coverage erase
 	tox
-	coverage combine
 	coverage report
 
 .PHONY: test
