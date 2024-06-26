@@ -1,2 +1,2 @@
-redpipe>=4.2.0
+-e git+https://github.com/happybits/redpipe@4d7a0c72c14f13e894805e83d1d5306f5a579712#egg=redpipe  # redpipe v4.2.0
 future
