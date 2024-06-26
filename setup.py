@@ -68,7 +68,7 @@ setup(
     author_email='john@happybits.co',
     url='https://github.com/happybits/hbom',
     packages=['hbom'],
-    install_requires=['redpipe>=4.0.1', 'future'],
+    install_requires=['redpipe>=4.2.0', 'future'],
     tests_require=[
         'mock',
         'tox',
