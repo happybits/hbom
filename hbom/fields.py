@@ -1,9 +1,7 @@
 from .compat import json
 from .exceptions import InvalidFieldValue, \
     MissingField, InvalidOperation
-import future.builtins
 import redpipe
-import six
 
 __all__ = '''
 Field
@@ -20,7 +18,7 @@ BooleanField
 
 NULL = object()
 
-_SCALAR = (str, six.text_type, future.builtins.str)
+_SCALAR = (str,)
 
 
 class Field(object):
@@ -211,5 +209,5 @@ class StringField(Field):
 
 
 class TextField(Field):
-    _allowed = [six.text_type, str]
+    _allowed = [str]
     _parser = redpipe.TextField

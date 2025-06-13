@@ -1,2 +1,3 @@
-include VERSION README.rst LICENCE
-recursive-include *.py
+include README.rst LICENSE
+recursive-include hbom *.py
+recursive-include test *.py

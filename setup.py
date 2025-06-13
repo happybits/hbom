@@ -5,7 +5,7 @@ import os
 from os import path
 from setuptools import setup, Extension
 import sys
-import imp
+import importlib.util
 
 # allow to build with cython, but disable by default.
 # build by doing CYTHON_ENABLED=1 python setup.py build_ext --inplace
@@ -14,8 +14,12 @@ CYTHON_ENABLED = True if os.getenv('CYTHON_ENABLED', False) else False
 MYDIR = path.abspath(os.path.dirname(__file__))
 long_description = open(os.path.join(MYDIR, 'README.rst')).read()
 
-version = imp.load_source('version',
-                          path.join('.', 'hbom', 'version.py')).__version__
+# Load version using importlib
+spec = importlib.util.spec_from_file_location(
+    'version', path.join('.', 'hbom', 'version.py'))
+version_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(version_module)
+version = version_module.__version__
 
 JYTHON = 'java' in sys.platform
 
@@ -68,6 +72,7 @@ setup(
     author_email='john@happybits.co',
     url='https://github.com/happybits/hbom',
     packages=['hbom'],
+    python_requires='>=3.9',
     install_requires=['redpipe>=4.2.0', 'future'],
     tests_require=[
         'mock',
@@ -81,8 +86,10 @@ setup(
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
-        'Programming Language :: Python',
-        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
     license='',
     include_package_data=True,
