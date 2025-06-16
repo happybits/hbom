@@ -29,6 +29,9 @@ tox -e py39,py310,py311,py312
 # Run single Python environment
 tox -e py39
 
+# Run comprehensive test script for all versions
+./test_all_versions.sh
+
 # Run tests with pytest directly  
 pytest test/
 
@@ -75,8 +78,8 @@ make cleanall    # Remove all temporary files
 
 ## Key Dependencies
 
-- `redpipe>=4.2.0` - Redis pipeline operations
-- `future` - Python 2/3 compatibility
+- `redpipe>=4.2.0` - Redis pipeline operations (loaded from private GitHub repo)
+- `future` - Legacy compatibility utilities (retained for some compatibility)
 - `redis>=4.1.0` - Redis client
 - Optional: `rediscluster` for Redis Cluster support
 - Optional: `Cython>=0.23.4` for performance optimization
@@ -97,3 +100,10 @@ make cleanall    # Remove all temporary files
 - **Python 3.12**: Fully supported and tested (84/84 tests pass)
 - **Python 2.7**: Support removed - Python 3 only
 - All dependencies are compatible with Python 3.9-3.12
+
+### pyenv Setup for Development
+For testing multiple Python versions, configure pyenv with:
+```bash
+pyenv global 3.9.18 3.10.18 3.11.5 3.12.11
+```
+This enables tox to find all Python interpreters for comprehensive testing.
