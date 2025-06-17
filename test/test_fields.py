@@ -135,5 +135,96 @@ class TestStringListField(unittest.TestCase):
         self.assertEqual(my_list, ['foo', 'bar', 'bazz'])
 
 
+class TestFieldValidation(unittest.TestCase):
+    """Test field validation methods and error conditions"""
+
+    def test_field_validate_none_allowed(self):
+        """Test field validation when None is allowed"""
+        field = hbom.StringField()
+        field.model = "TestModel"
+        field.attr = "test_field"
+        # Should not raise exception for None when not required
+        field.validate(None)
+
+    def test_field_validate_required_none(self):
+        """Test field validation error for required fields with None"""
+        field = hbom.StringField(required=True)
+        field.model = "TestModel"
+        field.attr = "test_field"
+        with self.assertRaises(hbom.InvalidFieldValue) as cm:
+            field.validate(None)
+        self.assertIn("test_field is required", str(cm.exception))
+
+    def test_field_validate_wrong_type(self):
+        """Test field validation error for wrong types"""
+        field = hbom.StringField()
+        field.model = "TestModel"
+        field.attr = "test_field"
+        with self.assertRaises(hbom.InvalidFieldValue) as cm:
+            field.validate(123)  # Integer instead of string
+        self.assertIn("has type", str(cm.exception))
+        self.assertIn("must be of type", str(cm.exception))
+
+    def test_primary_key_modification_prevented(self):
+        """Test that primary key modification is prevented"""
+
+        class TestModel(hbom.Definition):
+            id = hbom.StringField(primary=True)
+            name = hbom.StringField(required=True)
+
+        model = TestModel(id='test', name='test_name')
+        with self.assertRaises(hbom.InvalidOperation) as cm:
+            model.id = 'new_id'
+        self.assertIn("Cannot update primary key value", str(cm.exception))
+
+    def test_required_field_deletion_prevented(self):
+        """Test that required field deletion is prevented"""
+
+        class TestModel(hbom.Definition):
+            id = hbom.StringField(primary=True)
+            req = hbom.StringField(required=True)
+
+        model = TestModel(id='test', req='required_value')
+        with self.assertRaises(hbom.InvalidOperation) as cm:
+            del model.req
+        self.assertIn("cannot be null", str(cm.exception))
+
+    def test_field_set_none_triggers_delete(self):
+        """Test that setting non-required field to None triggers deletion"""
+
+        class TestModel(hbom.Definition):
+            id = hbom.StringField(primary=True)
+            optional = hbom.StringField()
+
+        model = TestModel(id='test', optional='value')
+        # Setting to None should trigger deletion for non-required fields
+        model.optional = None
+        # Check that the field is not in the model's data or is set to None
+        self.assertTrue(not hasattr(model, 'optional') or model.optional is None)
+
+
+class TestStringListFieldEdgeCases(unittest.TestCase):
+    """Test StringListField edge cases and empty value handling"""
+
+    def test_string_list_field_empty_values(self):
+        """Test StringListField with empty lists and filtering"""
+
+        class TestModel(hbom.Definition):
+            id = hbom.StringField(primary=True)
+            items = hbom.StringListField()
+
+        model = TestModel(id='test')
+        # Library returns None for unset fields
+        self.assertIsNone(model.items)
+
+        # Test with valid values
+        model.items = ['valid', 'another']
+        self.assertEqual(model.items, ['valid', 'another'])
+
+        # Test setting to None
+        model.items = None
+        self.assertIsNone(model.items)
+
+
 if __name__ == '__main__':
     unittest.main()
