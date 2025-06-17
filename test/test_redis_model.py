@@ -4,7 +4,6 @@
 from builtins import range
 import time
 import unittest
-import redpipe
 
 # test harness
 from unit_test_setup import generate_uuid
@@ -13,10 +12,7 @@ from unit_test_setup import generate_uuid
 from setup_redis import (
     hbom,
     clear_redis_testdata,
-    default_redis_connection,
     skip_if_redis_disabled,
-    TEST_DIR,
-    redislite,
 )
 
 
@@ -141,7 +137,6 @@ class TestRead(unittest.TestCase):
         self.assertEqual(res, ids)
 
 
-
 class SLModel(hbom.RedisObject):
     class definition(hbom.Definition):
         id = hbom.StringField(primary=True, default=generate_uuid)
@@ -154,8 +149,10 @@ class SLModel(hbom.RedisObject):
 class SLModelE(SLModel):
     _keyspace = 'SLModelE'
 
+
 class SLModelEU(SLModelE):
     _db = 'foo'
+
 
 class StringListModelTestCase(unittest.TestCase):
     def setUp(self):

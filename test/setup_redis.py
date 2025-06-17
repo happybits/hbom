@@ -17,6 +17,7 @@ alt_redis_connection = redislite.StrictRedis(ALT_DB)
 redpipe.connect_redis(default_redis_connection, name='test')
 redpipe.connect_redis(alt_redis_connection, name='test_alt')
 
+
 def clear_redis_testdata():
     default_redis_connection.flushall()
     alt_redis_connection.flushall()

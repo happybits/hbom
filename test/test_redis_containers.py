@@ -124,21 +124,21 @@ class ListTestCase(unittest.TestCase):
         self.assertEqual(b_snap, a.members)
 
     def test_native_methods(self):
-        l = ListModel('mylist')
-        self.assertEqual([], l.lrange(0, -1))
-        l.rpush('b')
-        l.rpush('c')
-        l.lpush('a')
-        self.assertEqual(['a', 'b', 'c'], l.lrange(0, -1))
-        self.assertEqual(3, l.llen())
-        l.ltrim(1, 2)
-        self.assertEqual(['b', 'c'], l.lrange(0, -1))
-        self.assertEqual('c', l.lindex(1))
-        self.assertEqual(1, l.lset(0, 'a'))
-        self.assertEqual(1, l.lset(1, 'b'))
-        self.assertEqual(['a', 'b'], l.lrange(0, -1))
-        self.assertEqual('a', l.lpop())
-        self.assertEqual('b', l.rpop())
+        list_obj = ListModel('mylist')
+        self.assertEqual([], list_obj.lrange(0, -1))
+        list_obj.rpush('b')
+        list_obj.rpush('c')
+        list_obj.lpush('a')
+        self.assertEqual(['a', 'b', 'c'], list_obj.lrange(0, -1))
+        self.assertEqual(3, list_obj.llen())
+        list_obj.ltrim(1, 2)
+        self.assertEqual(['b', 'c'], list_obj.lrange(0, -1))
+        self.assertEqual('c', list_obj.lindex(1))
+        self.assertEqual(1, list_obj.lset(0, 'a'))
+        self.assertEqual(1, list_obj.lset(1, 'b'))
+        self.assertEqual(['a', 'b'], list_obj.lrange(0, -1))
+        self.assertEqual('a', list_obj.lpop())
+        self.assertEqual('b', list_obj.rpop())
 
 
 class SampleSet(hbom.RedisSet):
@@ -445,6 +445,7 @@ class TestExpire(unittest.TestCase):
         self.assertEqual(res, True)
         res = SampleString('foo').object('IDLETIME')
         self.assertAlmostEqual(res, 0, places=-1)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

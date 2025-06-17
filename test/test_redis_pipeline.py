@@ -5,16 +5,11 @@ from builtins import range
 import time
 import unittest
 from uuid import uuid4
-import os
-
 # test-harness
 from unit_test_setup import generate_uuid
-from setup_redis import(
+from setup_redis import (
     hbom,
     clear_redis_testdata,
-    TEST_DIR,
-    default_redis_connection,
-    redislite,
     skip_if_redis_disabled
 )
 
