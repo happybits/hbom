@@ -1,2 +1,2 @@
--e git+https://github.com/happybits/redpipe@4d7a0c72c14f13e894805e83d1d5306f5a579712#egg=redpipe  # redpipe v4.2.0
+git+https://github.com/happybits/redpipe@marcus/eval-python-3.12-migration#egg=redpipe  # redpipe v5.5.0
 future
