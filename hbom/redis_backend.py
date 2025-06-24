@@ -1,12 +1,8 @@
 # std-lib
-from builtins import map
-from builtins import range
-from builtins import object
 import hashlib
 import redpipe
 import redpipe.keyspaces
 import redis.exceptions
-from six import add_metaclass
 
 
 # 3rd-party (optional)
@@ -108,8 +104,7 @@ class RedisContainerMeta(type):
         return type.__new__(mcs, name, bases, d)
 
 
-@add_metaclass(RedisContainerMeta)
-class RedisContainer(object):
+class RedisContainer(object, metaclass=RedisContainerMeta):
     """
     Base class for all containers. This class should not
     be used and does not provide anything except the ``db``
@@ -709,8 +704,7 @@ class RedisObjectMeta(type):
         return type.__new__(mcs, name, bases, d)
 
 
-@add_metaclass(RedisObjectMeta)
-class RedisObject(object):
+class RedisObject(object, metaclass=RedisObjectMeta):
 
     @classmethod
     def save(cls, instance, pipe=None, full=False):
@@ -1072,7 +1066,12 @@ class RedisColdStorageObject(RedisObject):
             # any objects
             # we were trying to freeze
             p = Pipeline()
-            map(lambda k: storage(k, pipe=p).persist(), ids)
+            # Ensure no TTLs remain on any objects if freezing operation fails.
+            # The `persist()` method is called for each object to remove its TTL (time-to-live),
+            # preventing unintended expiration. This is critical to maintain data integrity
+            # when the freezing operation encounters an error.
+            for k in ids:
+                storage(k, pipe=p).persist()
             p.execute()
             raise
 

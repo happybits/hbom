@@ -78,6 +78,7 @@ def bench(iterations=1000):
 
     pipe.execute()
 
+
 if __name__ == '__main__':
 
     import argparse

@@ -20,7 +20,6 @@ from setup_redis import (
 
 
 class Sample(hbom.RedisObject):
-
     class definition(hbom.Definition):
         id = hbom.StringField(primary=True, default=generate_uuid)
         a = hbom.IntegerField()
@@ -148,7 +147,6 @@ class ColdStorageMockSilentTruncate(ColdStorageMock):
 
 
 class Foo(hbom.RedisColdStorageObject):
-
     class definition(hbom.Definition):
         id = hbom.StringField(primary=True, default=generate_uuid)
         a = hbom.IntegerField()
@@ -161,6 +159,7 @@ class Foo(hbom.RedisColdStorageObject):
     coldstorage = ColdStorageMock()
 
     is_hot_key = re.compile(r'^[0-9]+\.[A-Za-z0-9\-\._]+$').match
+
 
 class SilentTruncate(hbom.RedisColdStorageObject):
     class definition(hbom.Definition):
@@ -227,10 +226,9 @@ class TestRedisColdStorage(unittest.TestCase):
         self.assertFalse(Foo.is_hot_key('b'))
 
         for o in Foo.get_multi(['a', 'b']):
-           self.assertFalse(o.exists())
+            self.assertFalse(o.exists())
         self.assertEqual(default_redis_connection.get('FOO{a}__xx'), b'1')
         self.assertEqual(default_redis_connection.get('FOO{b}__xx'), b'1')
-
 
     def test_missing_cold_key(self):
         self.assertFalse(Foo.is_hot_key('a'))
@@ -269,13 +267,13 @@ class TestRedisColdStorage(unittest.TestCase):
         a = Foo.get('a')
         self.assertTrue(a.exists())
 
+
 class SilentTruncateBugTestCase(unittest.TestCase):
     def setUp(self):
         clear_redis_testdata()
 
     def tearDown(self):
         clear_redis_testdata()
-
 
     def random_string(self, length=1):
         return ''.join([random.choice(ascii_letters) for _ in range(length)])
@@ -323,6 +321,7 @@ class TestMissingToSaveTestCase(unittest.TestCase):
         ts = time.time()
         s.created_at = ts
         self.assertRaises(hbom.MissingField, lambda: Sample.save(s))
+
 
 if __name__ == '__main__':
     unittest.main()
