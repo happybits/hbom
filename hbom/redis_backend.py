@@ -1066,7 +1066,9 @@ class RedisColdStorageObject(RedisObject):
             # any objects
             # we were trying to freeze
             p = Pipeline()
-            list(map(lambda k: storage(k, pipe=p).persist(), ids))
+            # Ensure no TTLs remain on any objects if freezing operation fails
+            for k in ids:
+                storage(k, pipe=p).persist()
             p.execute()
             raise
 
