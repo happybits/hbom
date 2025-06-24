@@ -73,7 +73,7 @@ setup(
     url='https://github.com/happybits/hbom',
     packages=['hbom'],
     python_requires='>=3.9',
-    install_requires=['redpipe>=4.2.0', 'future'],
+    install_requires=['redpipe>=4.2.0'],
     tests_require=[
         'mock',
         'tox',
