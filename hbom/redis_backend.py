@@ -1066,7 +1066,10 @@ class RedisColdStorageObject(RedisObject):
             # any objects
             # we were trying to freeze
             p = Pipeline()
-            # Ensure no TTLs remain on any objects if freezing operation fails
+            # Ensure no TTLs remain on any objects if freezing operation fails.
+            # The `persist()` method is called for each object to remove its TTL (time-to-live),
+            # preventing unintended expiration. This is critical to maintain data integrity
+            # when the freezing operation encounters an error.
             for k in ids:
                 storage(k, pipe=p).persist()
             p.execute()
