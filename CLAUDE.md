@@ -126,9 +126,6 @@ tox -e py39,py310,py311,py312
 # Run single Python environment
 tox -e py39
 
-# Run comprehensive test script for all versions
-./test_all_versions.sh
-
 # Run tests with pytest directly  
 pytest test/
 
